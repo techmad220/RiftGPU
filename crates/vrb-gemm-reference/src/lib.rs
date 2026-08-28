@@ -101,18 +101,19 @@ pub fn execute_gemm_bytes(input: &[u8], limits: GemmLimits) -> Result<Vec<u8>, R
     validate_limits(&meta, limits)?;
     let request = decode_request(input)?;
 
-    let m = usize::try_from(request.meta.m).map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
-    let n = usize::try_from(request.meta.n).map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
-    let k = usize::try_from(request.meta.k).map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
+    let m =
+        usize::try_from(request.meta.m).map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
+    let n =
+        usize::try_from(request.meta.n).map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
+    let k =
+        usize::try_from(request.meta.k).map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
     let output_elements = usize::try_from(request.meta.c_elements)
         .map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
 
     let mut output = vec![0.0_f32; output_elements];
-    if request.meta.beta != 0.0 {
-        if let Some(c) = request.c.as_deref() {
-            for (destination, source) in output.iter_mut().zip(c.iter().copied()) {
-                *destination = request.meta.beta * source;
-            }
+    if request.meta.beta != 0.0 && let Some(c) = request.c.as_deref() {
+        for (destination, source) in output.iter_mut().zip(c.iter().copied()) {
+            *destination = request.meta.beta * source;
         }
     }
 
@@ -163,20 +164,20 @@ fn validate_limits(meta: &GemmRequestMeta, limits: GemmLimits) -> Result<(), Ref
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vrb_gemm_protocol::{decode_response, encode_request};
+    use vrb_gemm_protocol::{decode_response, encode_request, GemmRequest};
 
     #[test]
     fn reference_gemm_matches_known_product() {
-        let request = encode_request(
-            2,
-            2,
-            3,
-            1.0,
-            0.0,
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
-            None,
-        )
+        let request = encode_request(GemmRequest {
+            m: 2,
+            n: 2,
+            k: 3,
+            alpha: 1.0,
+            beta: 0.0,
+            a: &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            b: &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            c: None,
+        })
         .expect("request should encode");
 
         let response = execute_gemm_bytes(&request, GemmLimits::default())
@@ -188,16 +189,16 @@ mod tests {
 
     #[test]
     fn alpha_beta_and_c_are_applied() {
-        let request = encode_request(
-            1,
-            2,
-            2,
-            0.5,
-            2.0,
-            &[2.0, 4.0],
-            &[1.0, 3.0, 2.0, 5.0],
-            Some(&[10.0, 20.0]),
-        )
+        let request = encode_request(GemmRequest {
+            m: 1,
+            n: 2,
+            k: 2,
+            alpha: 0.5,
+            beta: 2.0,
+            a: &[2.0, 4.0],
+            b: &[1.0, 3.0, 2.0, 5.0],
+            c: Some(&[10.0, 20.0]),
+        })
         .expect("request should encode");
 
         let response = CpuReferenceGemm::default()
@@ -210,8 +211,17 @@ mod tests {
 
     #[test]
     fn configured_limits_reject_excessive_work_before_decode_allocation() {
-        let request = encode_request(2, 2, 2, 1.0, 0.0, &[1.0; 4], &[1.0; 4], None)
-            .expect("request should encode");
+        let request = encode_request(GemmRequest {
+            m: 2,
+            n: 2,
+            k: 2,
+            alpha: 1.0,
+            beta: 0.0,
+            a: &[1.0; 4],
+            b: &[1.0; 4],
+            c: None,
+        })
+        .expect("request should encode");
         let limits = GemmLimits {
             max_matrix_elements: 16,
             max_multiply_adds: 7,
