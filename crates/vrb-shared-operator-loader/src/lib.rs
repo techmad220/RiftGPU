@@ -591,10 +591,7 @@ fn map_sync_kinds(bits: u64) -> Vec<ExternalSyncHandleKind> {
             sync_handle_kind::OPAQUE_FD,
             ExternalSyncHandleKind::OpaqueFd,
         ),
-        (
-            sync_handle_kind::TIMELINE,
-            ExternalSyncHandleKind::Timeline,
-        ),
+        (sync_handle_kind::TIMELINE, ExternalSyncHandleKind::Timeline),
     ];
     candidates
         .into_iter()
