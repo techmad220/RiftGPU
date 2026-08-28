@@ -10,6 +10,18 @@ const GEMM_KNOWN_FLAGS: u32 = GEMM_FLAG_HAS_C;
 const F32_BYTES: u64 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GemmRequest<'a> {
+    pub m: u64,
+    pub n: u64,
+    pub k: u64,
+    pub alpha: f32,
+    pub beta: f32,
+    pub a: &'a [f32],
+    pub b: &'a [f32],
+    pub c: Option<&'a [f32]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GemmRequestMeta {
     pub m: u64,
     pub n: u64,
@@ -66,7 +78,6 @@ pub enum GemmProtocolError {
     AddressSpaceOverflow,
 }
 
-#[must_use]
 pub fn encoded_response_len(m: u64, n: u64) -> Result<u64, GemmProtocolError> {
     let elements = checked_elements(m, n, "response matrix")?;
     let payload = elements
@@ -167,29 +178,20 @@ pub fn decode_request(input: &[u8]) -> Result<DecodedGemmRequest, GemmProtocolEr
     Ok(DecodedGemmRequest { meta, a, b, c })
 }
 
-pub fn encode_request(
-    m: u64,
-    n: u64,
-    k: u64,
-    alpha: f32,
-    beta: f32,
-    a: &[f32],
-    b: &[f32],
-    c: Option<&[f32]>,
-) -> Result<Vec<u8>, GemmProtocolError> {
-    let a_elements = checked_elements(m, k, "matrix A")?;
-    let b_elements = checked_elements(k, n, "matrix B")?;
-    let c_elements = checked_elements(m, n, "matrix C")?;
-    validate_slice_len("A", a_elements, a.len())?;
-    validate_slice_len("B", b_elements, b.len())?;
-    if let Some(c) = c {
+pub fn encode_request(request: GemmRequest<'_>) -> Result<Vec<u8>, GemmProtocolError> {
+    let a_elements = checked_elements(request.m, request.k, "matrix A")?;
+    let b_elements = checked_elements(request.k, request.n, "matrix B")?;
+    let c_elements = checked_elements(request.m, request.n, "matrix C")?;
+    validate_slice_len("A", a_elements, request.a.len())?;
+    validate_slice_len("B", b_elements, request.b.len())?;
+    if let Some(c) = request.c {
         validate_slice_len("C", c_elements, c.len())?;
     }
 
     let payload_elements = a_elements
         .checked_add(b_elements)
         .and_then(|value| {
-            if c.is_some() {
+            if request.c.is_some() {
                 value.checked_add(c_elements)
             } else {
                 Some(value)
@@ -210,17 +212,21 @@ pub fn encode_request(
     output.extend_from_slice(&GEMM_REQUEST_MAGIC);
     output.extend_from_slice(&GEMM_PROTOCOL_VERSION.to_le_bytes());
     output.extend_from_slice(&(GEMM_REQUEST_HEADER_LEN as u32).to_le_bytes());
-    let flags = if c.is_some() { GEMM_FLAG_HAS_C } else { 0 };
+    let flags = if request.c.is_some() {
+        GEMM_FLAG_HAS_C
+    } else {
+        0
+    };
     output.extend_from_slice(&flags.to_le_bytes());
     output.extend_from_slice(&0_u32.to_le_bytes());
-    output.extend_from_slice(&m.to_le_bytes());
-    output.extend_from_slice(&n.to_le_bytes());
-    output.extend_from_slice(&k.to_le_bytes());
-    output.extend_from_slice(&alpha.to_le_bytes());
-    output.extend_from_slice(&beta.to_le_bytes());
-    write_f32_values(&mut output, a);
-    write_f32_values(&mut output, b);
-    if let Some(c) = c {
+    output.extend_from_slice(&request.m.to_le_bytes());
+    output.extend_from_slice(&request.n.to_le_bytes());
+    output.extend_from_slice(&request.k.to_le_bytes());
+    output.extend_from_slice(&request.alpha.to_le_bytes());
+    output.extend_from_slice(&request.beta.to_le_bytes());
+    write_f32_values(&mut output, request.a);
+    write_f32_values(&mut output, request.b);
+    if let Some(c) = request.c {
         write_f32_values(&mut output, c);
     }
     debug_assert_eq!(output.len(), capacity);
@@ -279,11 +285,19 @@ pub fn decode_response(input: &[u8]) -> Result<DecodedGemmResponse, GemmProtocol
     }
 
     let mut cursor = GEMM_RESPONSE_HEADER_LEN;
-    let values = read_f32_values(input, &mut cursor, checked_elements(m, n, "response matrix")?)?;
+    let values = read_f32_values(
+        input,
+        &mut cursor,
+        checked_elements(m, n, "response matrix")?,
+    )?;
     Ok(DecodedGemmResponse { m, n, values })
 }
 
-fn checked_elements(rows: u64, columns: u64, label: &'static str) -> Result<u64, GemmProtocolError> {
+fn checked_elements(
+    rows: u64,
+    columns: u64,
+    label: &'static str,
+) -> Result<u64, GemmProtocolError> {
     rows.checked_mul(columns)
         .ok_or(GemmProtocolError::DimensionOverflow(label))
 }
@@ -351,7 +365,7 @@ fn read_f32_values(
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
         values.push(read_f32(input, *cursor)?);
-        *cursor = cursor
+        *cursor = (*cursor)
             .checked_add(4)
             .ok_or(GemmProtocolError::LengthOverflow)?;
     }
@@ -370,16 +384,16 @@ mod tests {
 
     #[test]
     fn request_round_trip_preserves_gemm_inputs() {
-        let encoded = encode_request(
-            2,
-            2,
-            3,
-            0.5,
-            2.0,
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
-            Some(&[1.0, 2.0, 3.0, 4.0]),
-        )
+        let encoded = encode_request(GemmRequest {
+            m: 2,
+            n: 2,
+            k: 3,
+            alpha: 0.5,
+            beta: 2.0,
+            a: &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            b: &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            c: Some(&[1.0, 2.0, 3.0, 4.0]),
+        })
         .expect("valid request should encode");
         let decoded = decode_request(&encoded).expect("encoded request should decode");
 
@@ -390,7 +404,7 @@ mod tests {
         assert_eq!(decoded.meta.beta, 2.0);
         assert_eq!(decoded.a, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         assert_eq!(decoded.b, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
-        assert_eq!(decoded.c.as_deref(), Some([1.0, 2.0, 3.0, 4.0].as_slice()));
+        assert_eq!(decoded.c.as_deref(), Some(&[1.0, 2.0, 3.0, 4.0][..]));
     }
 
     #[test]
@@ -404,8 +418,17 @@ mod tests {
 
     #[test]
     fn malformed_dimensions_are_rejected_without_wrapping() {
-        let error = encode_request(u64::MAX, 1, 2, 1.0, 0.0, &[], &[], None)
-            .expect_err("overflowing matrix dimensions must fail");
+        let error = encode_request(GemmRequest {
+            m: u64::MAX,
+            n: 1,
+            k: 2,
+            alpha: 1.0,
+            beta: 0.0,
+            a: &[],
+            b: &[],
+            c: None,
+        })
+        .expect_err("overflowing matrix dimensions must fail");
         assert_eq!(error, GemmProtocolError::DimensionOverflow("matrix A"));
     }
 }
