@@ -1,0 +1,13 @@
+[package]
+name = "vrb-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core capability, scheduling, and dependency-injection abstractions for Vulkan ROCm Bridge"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+vrb-plugin-api = { version = "0.1.0", path = "../vrb-plugin-api" }

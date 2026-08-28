@@ -1,0 +1,14 @@
+/target/
+**/*.rs.bk
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.so
+*.dylib
+.vscode/
+.idea/
+.DS_Store
+benchmarks/*.json
+!benchmarks/.gitkeep

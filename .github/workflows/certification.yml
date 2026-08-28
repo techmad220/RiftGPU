@@ -1,0 +1,50 @@
+name: Full Certification Software Gate
+
+on:
+  push:
+    branches:
+      - certification/v0.1.0-e2e
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Test all targets
+        run: cargo test --workspace --all-targets
+      - name: Clippy all targets
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Release build
+        run: cargo build --workspace --release
+      - name: Dynamic plugin E2E (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:VRB_TEST_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_test_plugin.dll'
+          $env:VRB_REQUIRE_PLUGIN_E2E = '1'
+          cargo test --release -p vrb-backends --test plugin_e2e -- --nocapture --test-threads=1
+
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: License and source policy
+        run: cargo deny check licenses sources bans advisories
