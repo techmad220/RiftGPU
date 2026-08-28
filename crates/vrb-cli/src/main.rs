@@ -291,7 +291,7 @@ fn validate_vector_add(left: &[f32], right: &[f32], output: &[f32]) -> Result<()
 
 fn median(samples: &[f64]) -> f64 {
     let middle = samples.len() / 2;
-    if samples.len() % 2 == 0 {
+    if samples.len().is_multiple_of(2) {
         (samples[middle - 1] + samples[middle]) / 2.0
     } else {
         samples[middle]
