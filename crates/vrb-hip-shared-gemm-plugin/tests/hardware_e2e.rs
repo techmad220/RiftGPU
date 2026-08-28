@@ -52,10 +52,11 @@ fn f32_bytes(values: &[f32]) -> Vec<u8> {
 }
 
 fn decode_f32_bytes(bytes: &[u8]) -> Vec<f32> {
-    assert_eq!(bytes.len() % 4, 0, "FP32 readback must be 4-byte aligned");
-    bytes
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("exact 4-byte chunk")))
+    let (chunks, remainder) = bytes.as_chunks::<4>();
+    assert!(remainder.is_empty(), "FP32 readback must be 4-byte aligned");
+    chunks
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
         .collect()
 }
 
@@ -98,35 +99,6 @@ fn correlated_hip_device_index() -> (i32, String) {
     )
 }
 
-fn reference_result(
-    m: u64,
-    n: u64,
-    k: u64,
-    alpha: f32,
-    beta: f32,
-    a: &[f32],
-    b: &[f32],
-    c: &[f32],
-) -> Vec<f32> {
-    let request = encode_request(GemmRequest {
-        m,
-        n,
-        k,
-        alpha,
-        beta,
-        a,
-        b,
-        c: Some(c),
-    })
-    .expect("CPU reference request must encode");
-    let response = CpuReferenceGemm::default()
-        .execute_bytes(&request)
-        .expect("CPU reference GEMM must execute");
-    decode_response(&response)
-        .expect("CPU reference response must decode")
-        .values
-}
-
 struct Case<'a> {
     m: u64,
     n: u64,
@@ -139,6 +111,26 @@ struct Case<'a> {
     iterations: u32,
 }
 
+fn reference_result(case: &Case<'_>) -> Vec<f32> {
+    let request = encode_request(GemmRequest {
+        m: case.m,
+        n: case.n,
+        k: case.k,
+        alpha: case.alpha,
+        beta: case.beta,
+        a: case.a,
+        b: case.b,
+        c: Some(case.c),
+    })
+    .expect("CPU reference request must encode");
+    let response = CpuReferenceGemm::default()
+        .execute_bytes(&request)
+        .expect("CPU reference GEMM must execute");
+    decode_response(&response)
+        .expect("CPU reference response must decode")
+        .values
+}
+
 fn run_shared_case(
     library: &LoadedSharedOperatorLibrary,
     hip_device_index: i32,
@@ -148,9 +140,7 @@ fn run_shared_case(
         case.iterations > 0,
         "hardware case must execute at least once"
     );
-    let expected = reference_result(
-        case.m, case.n, case.k, case.alpha, case.beta, case.a, case.b, case.c,
-    );
+    let expected = reference_result(&case);
     let a_bytes = f32_bytes(case.a);
     let b_bytes = f32_bytes(case.b);
     let c_bytes = f32_bytes(case.c);
