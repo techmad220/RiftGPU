@@ -15,7 +15,12 @@ impl CpuBackend {
         }
     }
 
-    pub fn vector_add_f32(&self, left: &[f32], right: &[f32], output: &mut [f32]) -> Result<(), BackendError> {
+    pub fn vector_add_f32(
+        &self,
+        left: &[f32],
+        right: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), BackendError> {
         if left.len() != right.len() || left.len() != output.len() {
             return Err(BackendError::Internal(
                 "vector_add_f32 requires equal input and output lengths".to_owned(),

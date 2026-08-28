@@ -73,24 +73,25 @@ impl VulkanBackend {
                 // SAFETY: device was returned by this instance.
                 let queue_families =
                     unsafe { instance.get_physical_device_queue_family_properties(device) };
-                let compute_queue = queue_families
-                    .iter()
-                    .any(|family| family.queue_count > 0 && family.queue_flags.contains(vk::QueueFlags::COMPUTE));
+                let compute_queue = queue_families.iter().any(|family| {
+                    family.queue_count > 0 && family.queue_flags.contains(vk::QueueFlags::COMPUTE)
+                });
 
                 // SAFETY: device was returned by this instance.
-                let extension_properties = unsafe {
-                    instance.enumerate_device_extension_properties(device)
-                }
-                .map_err(|error| {
-                    BackendError::Probe(format!("enumerate device extensions: {error:?}"))
-                })?;
+                let extension_properties =
+                    unsafe { instance.enumerate_device_extension_properties(device) }.map_err(
+                        |error| {
+                            BackendError::Probe(format!("enumerate device extensions: {error:?}"))
+                        },
+                    )?;
 
                 let mut extensions = BTreeSet::new();
                 for extension in extension_properties {
                     // SAFETY: Vulkan guarantees NUL termination for extension_name.
-                    let extension_name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) }
-                        .to_string_lossy()
-                        .into_owned();
+                    let extension_name =
+                        unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) }
+                            .to_string_lossy()
+                            .into_owned();
                     extensions.insert(extension_name);
                 }
 
@@ -135,11 +136,16 @@ impl ComputeBackend for VulkanBackend {
 
     fn probe(&self) -> Result<BackendProbe, BackendError> {
         let info = self.runtime_info()?;
-        let compute_devices: Vec<&VulkanDeviceInfo> =
-            info.devices.iter().filter(|device| device.compute_queue).collect();
+        let compute_devices: Vec<&VulkanDeviceInfo> = info
+            .devices
+            .iter()
+            .filter(|device| device.compute_queue)
+            .collect();
         let first = compute_devices.first().copied();
         let external_memory = compute_devices.iter().any(|device| device.external_memory);
-        let external_semaphore = compute_devices.iter().any(|device| device.external_semaphore);
+        let external_semaphore = compute_devices
+            .iter()
+            .any(|device| device.external_semaphore);
 
         Ok(BackendProbe {
             id: self.id.clone(),

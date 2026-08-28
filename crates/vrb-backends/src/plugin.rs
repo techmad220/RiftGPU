@@ -202,7 +202,11 @@ impl ComputeBackend for DynamicPluginBackend {
         Ok(BackendProbe {
             id: self.id.clone(),
             kind: map_backend_kind(info.backend_kind),
-            name: if name.is_empty() { self.name.clone() } else { name },
+            name: if name.is_empty() {
+                self.name.clone()
+            } else {
+                name
+            },
             vendor,
             available: info.device_count > 0,
             device_count: info.device_count,

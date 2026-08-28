@@ -11,7 +11,8 @@ type HipError = i32;
 type HipDevice = i32;
 type HipInit = unsafe extern "C" fn(flags: u32) -> HipError;
 type HipGetDeviceCount = unsafe extern "C" fn(count: *mut i32) -> HipError;
-type HipDeviceGetName = unsafe extern "C" fn(name: *mut c_char, len: i32, device: HipDevice) -> HipError;
+type HipDeviceGetName =
+    unsafe extern "C" fn(name: *mut c_char, len: i32, device: HipDevice) -> HipError;
 type HipRuntimeGetVersion = unsafe extern "C" fn(version: *mut i32) -> HipError;
 
 #[derive(Debug, Clone)]
@@ -47,13 +48,19 @@ impl HipBackend {
                 .map_err(|error| BackendError::Probe(format!("hipInit missing: {error}")))?;
             let hip_get_device_count = library
                 .get::<HipGetDeviceCount>(b"hipGetDeviceCount\0")
-                .map_err(|error| BackendError::Probe(format!("hipGetDeviceCount missing: {error}")))?;
+                .map_err(|error| {
+                    BackendError::Probe(format!("hipGetDeviceCount missing: {error}"))
+                })?;
             let hip_device_get_name = library
                 .get::<HipDeviceGetName>(b"hipDeviceGetName\0")
-                .map_err(|error| BackendError::Probe(format!("hipDeviceGetName missing: {error}")))?;
+                .map_err(|error| {
+                    BackendError::Probe(format!("hipDeviceGetName missing: {error}"))
+                })?;
             let hip_runtime_get_version = library
                 .get::<HipRuntimeGetVersion>(b"hipRuntimeGetVersion\0")
-                .map_err(|error| BackendError::Probe(format!("hipRuntimeGetVersion missing: {error}")))?;
+                .map_err(|error| {
+                    BackendError::Probe(format!("hipRuntimeGetVersion missing: {error}"))
+                })?;
 
             check_hip(hip_init(0), "hipInit")?;
 
@@ -76,7 +83,9 @@ impl HipBackend {
                 let mut buffer = [0_i8; 256];
                 let result = hip_device_get_name(buffer.as_mut_ptr(), buffer.len() as i32, index);
                 if result == 0 {
-                    let name = CStr::from_ptr(buffer.as_ptr()).to_string_lossy().into_owned();
+                    let name = CStr::from_ptr(buffer.as_ptr())
+                        .to_string_lossy()
+                        .into_owned();
                     devices.push(if name.is_empty() {
                         format!("HIP device {index}")
                     } else {

@@ -5,12 +5,14 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing_subscriber::EnvFilter;
 use vrb_backends::{CpuBackend, DynamicPluginBackend, HipBackend, VulkanBackend};
-use vrb_core::{
-    DataType, OperationKind, PerformanceRecord, RouteRequest, Runtime, RuntimeBuilder,
-};
+use vrb_core::{DataType, OperationKind, PerformanceRecord, RouteRequest, Runtime, RuntimeBuilder};
 
 #[derive(Debug, Parser)]
-#[command(name = "vrb", version, about = "Vulkan ROCm Bridge diagnostics and routing CLI")]
+#[command(
+    name = "vrb",
+    version,
+    about = "Vulkan ROCm Bridge diagnostics and routing CLI"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -99,7 +101,9 @@ impl From<CliDataType> for DataType {
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
+        )
         .with_target(false)
         .try_init()
         .ok();
@@ -153,7 +157,10 @@ fn doctor(json: bool, plugins: &[PathBuf]) -> Result<()> {
         println!("  vendor: {}", probe.vendor);
         println!("  devices: {}", probe.device_count);
         println!("  external memory: {}", probe.capabilities.external_memory);
-        println!("  external semaphore: {}", probe.capabilities.external_semaphore);
+        println!(
+            "  external semaphore: {}",
+            probe.capabilities.external_semaphore
+        );
         println!("  zero copy: {}", probe.capabilities.zero_copy);
         println!("  detail: {}", probe.detail);
     }
@@ -186,8 +193,12 @@ fn bench_cpu(elements: usize, iterations: u32, output_path: Option<PathBuf>) -> 
     }
 
     let backend = CpuBackend::new();
-    let left: Vec<f32> = (0..elements).map(|index| (index % 251) as f32 * 0.25).collect();
-    let right: Vec<f32> = (0..elements).map(|index| (index % 127) as f32 * 0.5).collect();
+    let left: Vec<f32> = (0..elements)
+        .map(|index| (index % 251) as f32 * 0.25)
+        .collect();
+    let right: Vec<f32> = (0..elements)
+        .map(|index| (index % 127) as f32 * 0.5)
+        .collect();
     let mut output = vec![0.0_f32; elements];
 
     backend.vector_add_f32(&left, &right, &mut output)?;
@@ -204,9 +215,8 @@ fn bench_cpu(elements: usize, iterations: u32, output_path: Option<PathBuf>) -> 
     samples.sort_by(f64::total_cmp);
     let median_microseconds = median(&samples);
     let bytes_per_iteration = elements as f64 * 3.0 * std::mem::size_of::<f32>() as f64;
-    let gib_per_second = bytes_per_iteration
-        / (median_microseconds / 1_000_000.0)
-        / (1024.0 * 1024.0 * 1024.0);
+    let gib_per_second =
+        bytes_per_iteration / (median_microseconds / 1_000_000.0) / (1024.0 * 1024.0 * 1024.0);
 
     let record = PerformanceRecord {
         backend: vrb_core::BackendId::new("cpu")?,
@@ -236,9 +246,7 @@ fn validate_vector_add(left: &[f32], right: &[f32], output: &[f32]) -> Result<()
     for (index, ((left, right), actual)) in left.iter().zip(right).zip(output).enumerate() {
         let expected = *left + *right;
         if actual.to_bits() != expected.to_bits() {
-            bail!(
-                "CPU reference mismatch at element {index}: expected {expected}, got {actual}"
-            );
+            bail!("CPU reference mismatch at element {index}: expected {expected}, got {actual}");
         }
     }
     Ok(())

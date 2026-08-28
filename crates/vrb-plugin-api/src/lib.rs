@@ -75,10 +75,8 @@ pub struct VrbExecutionRequestV1 {
     pub opaque: u64,
 }
 
-pub type ProbeFn = unsafe extern "C" fn(
-    user_data: *mut c_void,
-    out_info: *mut VrbBackendInfoV1,
-) -> VrbStatus;
+pub type ProbeFn =
+    unsafe extern "C" fn(user_data: *mut c_void, out_info: *mut VrbBackendInfoV1) -> VrbStatus;
 
 pub type ExecuteFn = unsafe extern "C" fn(
     user_data: *mut c_void,
