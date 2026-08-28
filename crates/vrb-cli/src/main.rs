@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing_subscriber::EnvFilter;
-use vrb_backends::{CpuBackend, DynamicPluginBackend, HipBackend, VulkanBackend};
+use vrb_backends::{
+    run_zero_copy_smoke, CpuBackend, DynamicPluginBackend, HipBackend, VulkanBackend,
+};
 use vrb_core::{DataType, OperationKind, PerformanceRecord, RouteRequest, Runtime, RuntimeBuilder};
 
 #[derive(Debug, Parser)]
@@ -46,6 +48,13 @@ enum Command {
         iterations: u32,
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+    /// Prove Vulkan and HIP can access the same GPU allocation without a CPU relay copy.
+    BridgeSmoke {
+        #[arg(long, default_value_t = 4_194_304)]
+        bytes: u64,
+        #[arg(long, default_value_t = 0x5a, value_parser = parse_byte)]
+        pattern: u8,
     },
 }
 
@@ -121,6 +130,7 @@ fn main() -> Result<()> {
             iterations,
             output,
         } => bench_cpu(elements, iterations, output),
+        Command::BridgeSmoke { bytes, pattern } => bridge_smoke(bytes, pattern),
     }
 }
 
@@ -242,6 +252,33 @@ fn bench_cpu(elements: usize, iterations: u32, output_path: Option<PathBuf>) -> 
     Ok(())
 }
 
+fn bridge_smoke(bytes: u64, pattern: u8) -> Result<()> {
+    let report = run_zero_copy_smoke(bytes, pattern)?;
+    println!("VULKAN_DEVICE={}", report.vulkan_device);
+    println!("HIP_DEVICE={}", report.hip_device);
+    println!("BYTES={}", report.bytes);
+    println!("PATTERN=0x{:02x}", report.pattern);
+    println!("VERIFIED_BYTES={}", report.verified_bytes);
+    println!("HANDLE={}", report.external_memory_handle);
+    println!("SYNCHRONIZATION={}", report.synchronization);
+    println!("ZERO_COPY_SMOKE=PASS");
+    Ok(())
+}
+
+fn parse_byte(value: &str) -> std::result::Result<u8, String> {
+    let trimmed = value.trim();
+    if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
+        u8::from_str_radix(hex, 16).map_err(|error| format!("invalid byte '{value}': {error}"))
+    } else {
+        trimmed
+            .parse::<u8>()
+            .map_err(|error| format!("invalid byte '{value}': {error}"))
+    }
+}
+
 fn validate_vector_add(left: &[f32], right: &[f32], output: &[f32]) -> Result<()> {
     for (index, ((left, right), actual)) in left.iter().zip(right).zip(output).enumerate() {
         let expected = *left + *right;
@@ -269,5 +306,12 @@ mod tests {
     fn median_handles_even_and_odd_sample_counts() {
         assert_eq!(median(&[1.0, 2.0, 3.0]), 2.0);
         assert_eq!(median(&[1.0, 2.0, 3.0, 4.0]), 2.5);
+    }
+
+    #[test]
+    fn parse_byte_accepts_decimal_and_hex() {
+        assert_eq!(parse_byte("90").unwrap(), 90);
+        assert_eq!(parse_byte("0x5a").unwrap(), 0x5a);
+        assert!(parse_byte("0x100").is_err());
     }
 }
