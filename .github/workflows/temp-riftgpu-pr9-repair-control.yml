@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   repair:
-    if: github.head_ref == 'control/riftgpu-pr9-windows-clippy'
+    if: github.head_ref == 'control/riftgpu-pr9-repair-v2'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
