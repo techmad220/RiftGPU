@@ -1,15 +1,15 @@
 name: Temporary Fix RiftGPU PR9 Windows Clippy
 
 on:
-  issues:
-    types: [opened]
+  push:
+    branches:
+      - control/riftgpu-pr9-windows-clippy
 
 permissions:
   contents: write
 
 jobs:
   fix-windows-clippy:
-    if: github.event.issue.title == 'run:fix-riftgpu-pr9-windows-clippy-20260828'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
