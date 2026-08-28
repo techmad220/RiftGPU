@@ -5,6 +5,9 @@ use std::time::Instant;
 use vrb_backends::{run_copy_fallback_smoke, run_zero_copy_smoke, HipBackend, VulkanBackend};
 use vrb_core::{BackendError, ComputeBackend};
 
+const STRESS_ITERATIONS: u8 = 32;
+const MAX_HANDLE_GROWTH: u32 = 8;
+
 #[link(name = "kernel32")]
 extern "system" {
     fn GetCurrentProcess() -> *mut c_void;
@@ -17,6 +20,15 @@ fn process_handle_count() -> u32 {
     let ok = unsafe { GetProcessHandleCount(process, &mut count) };
     assert_ne!(ok, 0, "GetProcessHandleCount failed");
     count
+}
+
+fn stress_bytes(iteration: u8) -> u64 {
+    match iteration % 4 {
+        0 => 1024 * 1024,
+        1 => 4 * 1024 * 1024,
+        2 => 8 * 1024 * 1024,
+        _ => 16 * 1024 * 1024,
+    }
 }
 
 fn median_us(samples: &mut [u128]) -> u128 {
@@ -98,17 +110,12 @@ fn amd_vulkan_hip_bridge_full_hardware_e2e() {
     assert_eq!(fallback_warmup.verified_bytes, 1024 * 1024);
     assert_eq!(fallback_warmup.vulkan_device, fallback_warmup.hip_device);
 
-    let handles_before = process_handle_count();
-    for iteration in 0_u8..32 {
-        let bytes = match iteration % 4 {
-            0 => 1024 * 1024,
-            1 => 4 * 1024 * 1024,
-            2 => 8 * 1024 * 1024,
-            _ => 16 * 1024 * 1024,
-        };
+    let zero_handles_before = process_handle_count();
+    for iteration in 0_u8..STRESS_ITERATIONS {
+        let bytes = stress_bytes(iteration);
         let pattern = 0x20_u8.wrapping_add(iteration);
         let report = run_zero_copy_smoke(bytes, pattern).unwrap_or_else(|error| {
-            panic!("bridge iteration {iteration} failed for {bytes} bytes: {error}")
+            panic!("zero-copy iteration {iteration} failed for {bytes} bytes: {error}")
         });
         assert_eq!(report.bytes, bytes);
         assert_eq!(report.verified_bytes, bytes);
@@ -117,11 +124,32 @@ fn amd_vulkan_hip_bridge_full_hardware_e2e() {
         assert!(report.external_memory_handle.contains("WIN32"));
         assert!(!report.synchronization.is_empty());
     }
-    let handles_after = process_handle_count();
-    let growth = handles_after.saturating_sub(handles_before);
+    let zero_handles_after = process_handle_count();
+    let zero_handle_growth = zero_handles_after.saturating_sub(zero_handles_before);
     assert!(
-        growth <= 8,
-        "process handles grew by {growth} across 32 bridge iterations ({handles_before} -> {handles_after})"
+        zero_handle_growth <= MAX_HANDLE_GROWTH,
+        "zero-copy process handles grew by {zero_handle_growth} across {STRESS_ITERATIONS} iterations ({zero_handles_before} -> {zero_handles_after})"
+    );
+
+    let fallback_handles_before = process_handle_count();
+    for iteration in 0_u8..STRESS_ITERATIONS {
+        let bytes = stress_bytes(iteration);
+        let pattern = 0x40_u8.wrapping_add(iteration);
+        let report = run_copy_fallback_smoke(bytes, pattern).unwrap_or_else(|error| {
+            panic!("copy-fallback iteration {iteration} failed for {bytes} bytes: {error}")
+        });
+        assert_eq!(report.bytes, bytes);
+        assert_eq!(report.verified_bytes, bytes);
+        assert_eq!(report.pattern, pattern);
+        assert_eq!(report.vulkan_device, report.hip_device);
+        assert!(report.transfer_path.contains("host relay"));
+        assert!(!report.synchronization.is_empty());
+    }
+    let fallback_handles_after = process_handle_count();
+    let fallback_handle_growth = fallback_handles_after.saturating_sub(fallback_handles_before);
+    assert!(
+        fallback_handle_growth <= MAX_HANDLE_GROWTH,
+        "copy-fallback process handles grew by {fallback_handle_growth} across {STRESS_ITERATIONS} iterations ({fallback_handles_before} -> {fallback_handles_after})"
     );
 
     let large = run_zero_copy_smoke(64 * 1024 * 1024, 0xa5)
@@ -129,6 +157,17 @@ fn amd_vulkan_hip_bridge_full_hardware_e2e() {
     assert_eq!(large.verified_bytes, 64 * 1024 * 1024);
     assert_eq!(large.vulkan_device, preferred.name);
     assert_eq!(large.hip_device, preferred.name);
+
+    let fallback_large = run_copy_fallback_smoke(64 * 1024 * 1024, 0x5a)
+        .expect("final 64 MiB copy fallback must succeed after stress loop");
+    assert_eq!(fallback_large.verified_bytes, 64 * 1024 * 1024);
+    assert_eq!(fallback_large.vulkan_device, preferred.name);
+    assert_eq!(fallback_large.hip_device, preferred.name);
+    assert!(fallback_large.transfer_path.contains("host relay"));
+
+    println!(
+        "VRB_STRESS_RECEIPT_JSON={{\"iterations\":{STRESS_ITERATIONS},\"max_handle_growth\":{MAX_HANDLE_GROWTH},\"zero_copy_handle_growth\":{zero_handle_growth},\"copy_fallback_handle_growth\":{fallback_handle_growth}}}"
+    );
 
     // Criterion 10 receipt: compare two independently executed, correctness-checked
     // cross-stack transports. No synthetic delay and no claim that one must always
