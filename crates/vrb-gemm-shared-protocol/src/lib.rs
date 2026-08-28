@@ -167,19 +167,35 @@ fn matrix_bytes(
 }
 
 fn read_u32(input: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(input[offset..offset + 4].try_into().expect("validated header"))
+    u32::from_le_bytes(
+        input[offset..offset + 4]
+            .try_into()
+            .expect("validated header"),
+    )
 }
 
 fn read_i32(input: &[u8], offset: usize) -> i32 {
-    i32::from_le_bytes(input[offset..offset + 4].try_into().expect("validated header"))
+    i32::from_le_bytes(
+        input[offset..offset + 4]
+            .try_into()
+            .expect("validated header"),
+    )
 }
 
 fn read_u64(input: &[u8], offset: usize) -> u64 {
-    u64::from_le_bytes(input[offset..offset + 8].try_into().expect("validated header"))
+    u64::from_le_bytes(
+        input[offset..offset + 8]
+            .try_into()
+            .expect("validated header"),
+    )
 }
 
 fn read_f32(input: &[u8], offset: usize) -> f32 {
-    f32::from_le_bytes(input[offset..offset + 4].try_into().expect("validated header"))
+    f32::from_le_bytes(
+        input[offset..offset + 4]
+            .try_into()
+            .expect("validated header"),
+    )
 }
 
 #[cfg(test)]
@@ -242,6 +258,9 @@ mod tests {
             hip_device_index: 0,
         })
         .expect_err("zero-sized shared GEMM must fail");
-        assert_eq!(error, SharedGemmProtocolError::ZeroDimension { m: 1, n: 0, k: 1 });
+        assert_eq!(
+            error,
+            SharedGemmProtocolError::ZeroDimension { m: 1, n: 0, k: 1 }
+        );
     }
 }

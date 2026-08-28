@@ -31,7 +31,9 @@ pub fn with_exported_shared_buffers<T>(
 
 #[cfg(not(target_os = "windows"))]
 mod platform {
-    use super::{BackendError, ExportedBufferSessionOutput, ExportedSharedBuffer, SharedBufferSpec};
+    use super::{
+        BackendError, ExportedBufferSessionOutput, ExportedSharedBuffer, SharedBufferSpec,
+    };
 
     pub(super) fn with_buffers<T>(
         _specs: &[SharedBufferSpec<'_>],
@@ -45,7 +47,9 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use super::{BackendError, ExportedBufferSessionOutput, ExportedSharedBuffer, SharedBufferSpec};
+    use super::{
+        BackendError, ExportedBufferSessionOutput, ExportedSharedBuffer, SharedBufferSpec,
+    };
     use ash::{khr, vk, Device, Entry, Instance};
     use std::ffi::{CStr, CString};
     use std::ptr;
@@ -246,18 +250,17 @@ mod platform {
                 .queue_create_infos(&queue_infos)
                 .enabled_extension_names(&extension_names);
             // SAFETY: selection and arrays are valid for this call.
-            let device = match unsafe {
-                instance.create_device(physical_device, &device_info, None)
-            } {
-                Ok(device) => device,
-                Err(error) => {
-                    // SAFETY: instance has no device child on failure.
-                    unsafe { instance.destroy_instance(None) };
-                    return Err(BackendError::Probe(format!(
-                        "vkCreateDevice for '{device_name}': {error:?}"
-                    )));
-                }
-            };
+            let device =
+                match unsafe { instance.create_device(physical_device, &device_info, None) } {
+                    Ok(device) => device,
+                    Err(error) => {
+                        // SAFETY: instance has no device child on failure.
+                        unsafe { instance.destroy_instance(None) };
+                        return Err(BackendError::Probe(format!(
+                            "vkCreateDevice for '{device_name}': {error:?}"
+                        )));
+                    }
+                };
             // SAFETY: requested queue exists.
             let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
             let pool_info = vk::CommandPoolCreateInfo::default()
@@ -377,14 +380,17 @@ mod platform {
             };
             let required =
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
-            let memory_type_index = find_memory_type(&properties, requirements.memory_type_bits, required)
-                .ok_or_else(|| {
-                    // SAFETY: buffer is unbound.
-                    unsafe { self.device.destroy_buffer(buffer, None) };
-                    BackendError::Unsupported(
-                        "no HOST_VISIBLE|HOST_COHERENT staging memory type is available".to_owned(),
-                    )
-                })?;
+            let memory_type_index =
+                find_memory_type(&properties, requirements.memory_type_bits, required).ok_or_else(
+                    || {
+                        // SAFETY: buffer is unbound.
+                        unsafe { self.device.destroy_buffer(buffer, None) };
+                        BackendError::Unsupported(
+                            "no HOST_VISIBLE|HOST_COHERENT staging memory type is available"
+                                .to_owned(),
+                        )
+                    },
+                )?;
             let allocation_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(requirements.size)
                 .memory_type_index(memory_type_index);
@@ -423,7 +429,8 @@ mod platform {
             if data.len() as u64 != staging.logical_size {
                 return Err(BackendError::Internal(format!(
                     "staging write length {} does not match buffer size {}",
-                    data.len(), staging.logical_size
+                    data.len(),
+                    staging.logical_size
                 )));
             }
             // SAFETY: staging allocation is HOST_VISIBLE and mapped range is valid.
@@ -613,30 +620,41 @@ mod platform {
                 .command_buffer_count(1);
             // SAFETY: command pool belongs to device.
             let command_buffers = unsafe { self.device.allocate_command_buffers(&allocation_info) }
-                .map_err(|error| BackendError::Internal(format!("vkAllocateCommandBuffers: {error:?}")))?;
+                .map_err(|error| {
+                    BackendError::Internal(format!("vkAllocateCommandBuffers: {error:?}"))
+                })?;
             let command_buffer = command_buffers[0];
             let result = (|| {
                 let begin = vk::CommandBufferBeginInfo::default()
                     .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
                 // SAFETY: fresh command buffer is idle.
-                unsafe { self.device.begin_command_buffer(command_buffer, &begin) }
-                    .map_err(|error| BackendError::Internal(format!("vkBeginCommandBuffer: {error:?}")))?;
+                unsafe { self.device.begin_command_buffer(command_buffer, &begin) }.map_err(
+                    |error| BackendError::Internal(format!("vkBeginCommandBuffer: {error:?}")),
+                )?;
                 record(command_buffer);
                 // SAFETY: recording is complete.
-                unsafe { self.device.end_command_buffer(command_buffer) }
-                    .map_err(|error| BackendError::Internal(format!("vkEndCommandBuffer: {error:?}")))?;
+                unsafe { self.device.end_command_buffer(command_buffer) }.map_err(|error| {
+                    BackendError::Internal(format!("vkEndCommandBuffer: {error:?}"))
+                })?;
                 let list = [command_buffer];
                 let submits = [vk::SubmitInfo::default().command_buffers(&list)];
                 // SAFETY: queue and command buffer belong to same device.
-                unsafe { self.device.queue_submit(self.queue, &submits, vk::Fence::null()) }
-                    .map_err(|error| BackendError::Internal(format!("vkQueueSubmit: {error:?}")))?;
+                unsafe {
+                    self.device
+                        .queue_submit(self.queue, &submits, vk::Fence::null())
+                }
+                .map_err(|error| BackendError::Internal(format!("vkQueueSubmit: {error:?}")))?;
                 // SAFETY: host waits synchronously for completion.
-                unsafe { self.device.queue_wait_idle(self.queue) }
-                    .map_err(|error| BackendError::Internal(format!("vkQueueWaitIdle: {error:?}")))?;
+                unsafe { self.device.queue_wait_idle(self.queue) }.map_err(|error| {
+                    BackendError::Internal(format!("vkQueueWaitIdle: {error:?}"))
+                })?;
                 Ok(())
             })();
             // SAFETY: submission is idle on success; failed recording is not in flight.
-            unsafe { self.device.free_command_buffers(self.command_pool, &command_buffers) };
+            unsafe {
+                self.device
+                    .free_command_buffers(self.command_pool, &command_buffers)
+            };
             result
         }
     }
@@ -686,17 +704,19 @@ mod platform {
                 .to_string_lossy()
                 .into_owned();
             // SAFETY: physical device came from instance.
-            let queue_families = unsafe {
-                instance.get_physical_device_queue_family_properties(physical_device)
-            };
+            let queue_families =
+                unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
             let Some((queue_index, _)) = queue_families.iter().enumerate().find(|(_, family)| {
                 family.queue_count > 0 && family.queue_flags.contains(vk::QueueFlags::COMPUTE)
             }) else {
                 continue;
             };
             // SAFETY: physical device came from instance.
-            let extensions = unsafe { instance.enumerate_device_extension_properties(physical_device) }
-                .map_err(|error| BackendError::Probe(format!("enumerate Vulkan extensions: {error:?}")))?;
+            let extensions =
+                unsafe { instance.enumerate_device_extension_properties(physical_device) }
+                    .map_err(|error| {
+                        BackendError::Probe(format!("enumerate Vulkan extensions: {error:?}"))
+                    })?;
             let supports_win32 = extensions.iter().any(|extension| {
                 // SAFETY: Vulkan extension_name is NUL terminated.
                 (unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) })
@@ -706,8 +726,16 @@ mod platform {
                 continue;
             }
             let rank = (
-                if properties.vendor_id == AMD_PCI_VENDOR_ID { 0_u8 } else { 1_u8 },
-                if properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU { 0_u8 } else { 1_u8 },
+                if properties.vendor_id == AMD_PCI_VENDOR_ID {
+                    0_u8
+                } else {
+                    1_u8
+                },
+                if properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU {
+                    0_u8
+                } else {
+                    1_u8
+                },
                 properties.device_id,
             );
             candidates.push((rank, physical_device, queue_index as u32, name));

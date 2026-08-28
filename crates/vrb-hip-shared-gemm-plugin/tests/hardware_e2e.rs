@@ -74,7 +74,10 @@ fn correlated_hip_device_index() -> (i32, String) {
     let hip = HipBackend::new()
         .runtime_info()
         .expect("HIP runtime discovery must succeed");
-    assert!(hip.external_memory_api, "HIP external-memory API is required");
+    assert!(
+        hip.external_memory_api,
+        "HIP external-memory API is required"
+    );
     let target = normalize_device_name(&preferred.name);
     let (index, name) = hip
         .devices
@@ -141,7 +144,10 @@ fn run_shared_case(
     hip_device_index: i32,
     case: Case<'_>,
 ) -> (String, Vec<f32>, u32) {
-    assert!(case.iterations > 0, "hardware case must execute at least once");
+    assert!(
+        case.iterations > 0,
+        "hardware case must execute at least once"
+    );
     let expected = reference_result(
         case.m, case.n, case.k, case.alpha, case.beta, case.a, case.b, case.c,
     );
@@ -268,8 +274,8 @@ fn amd_vulkan_to_hip_rocblas_shared_gemm_matches_cpu_oracle() {
         "HIP shared GEMM plugin is missing: {}",
         path.display()
     );
-    let library = LoadedSharedOperatorLibrary::load(&path)
-        .expect("HIP shared GEMM plugin must load");
+    let library =
+        LoadedSharedOperatorLibrary::load(&path).expect("HIP shared GEMM plugin must load");
     let capabilities = library.operators()[0].capabilities();
     assert!(
         !capabilities.proven_zero_copy,

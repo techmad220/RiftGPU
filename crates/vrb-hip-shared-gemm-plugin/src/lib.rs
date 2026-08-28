@@ -36,10 +36,8 @@ type HipInit = unsafe extern "C" fn(u32) -> i32;
 #[cfg(target_os = "windows")]
 type HipSetDevice = unsafe extern "C" fn(i32) -> i32;
 #[cfg(target_os = "windows")]
-type HipImportExternalMemory = unsafe extern "C" fn(
-    *mut HipExternalMemory,
-    *const HipExternalMemoryHandleDesc,
-) -> i32;
+type HipImportExternalMemory =
+    unsafe extern "C" fn(*mut HipExternalMemory, *const HipExternalMemoryHandleDesc) -> i32;
 #[cfg(target_os = "windows")]
 type HipExternalMemoryGetMappedBuffer = unsafe extern "C" fn(
     *mut *mut c_void,
@@ -130,19 +128,15 @@ impl HipApi {
         unsafe {
             let init = load_required::<HipInit>(&library, b"hipInit\0")?;
             let set_device = load_required::<HipSetDevice>(&library, b"hipSetDevice\0")?;
-            let import_external_memory = load_required::<HipImportExternalMemory>(
-                &library,
-                b"hipImportExternalMemory\0",
-            )?;
+            let import_external_memory =
+                load_required::<HipImportExternalMemory>(&library, b"hipImportExternalMemory\0")?;
             let external_memory_get_mapped_buffer =
                 load_required::<HipExternalMemoryGetMappedBuffer>(
                     &library,
                     b"hipExternalMemoryGetMappedBuffer\0",
                 )?;
-            let destroy_external_memory = load_required::<HipDestroyExternalMemory>(
-                &library,
-                b"hipDestroyExternalMemory\0",
-            )?;
+            let destroy_external_memory =
+                load_required::<HipDestroyExternalMemory>(&library, b"hipDestroyExternalMemory\0")?;
             let free = load_required::<HipFree>(&library, b"hipFree\0")?;
             let device_synchronize =
                 load_required::<HipDeviceSynchronize>(&library, b"hipDeviceSynchronize\0")?;
@@ -161,10 +155,7 @@ impl HipApi {
         }
     }
 
-    fn import_region(
-        &self,
-        region: &VrbSharedResourceRegionV1,
-    ) -> Result<ImportedRegion<'_>, i32> {
+    fn import_region(&self, region: &VrbSharedResourceRegionV1) -> Result<ImportedRegion<'_>, i32> {
         let descriptor = HipExternalMemoryHandleDesc {
             type_: HIP_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT,
             handle: HipExternalMemoryHandleValue {
@@ -387,9 +378,8 @@ fn execute_windows(request: &VrbSharedOperatorExecutionRequestV1) -> i32 {
         return status::INVALID_ARGUMENT;
     }
     // SAFETY: resource pointer is non-null and count is exactly the protocol's fixed count.
-    let resources = unsafe {
-        std::slice::from_raw_parts(request.resources_ptr, SHARED_GEMM_RESOURCE_COUNT)
-    };
+    let resources =
+        unsafe { std::slice::from_raw_parts(request.resources_ptr, SHARED_GEMM_RESOURCE_COUNT) };
     let lengths = match expected_resource_lengths(control) {
         Ok(value) => value,
         Err(_) => return status::INVALID_ARGUMENT,

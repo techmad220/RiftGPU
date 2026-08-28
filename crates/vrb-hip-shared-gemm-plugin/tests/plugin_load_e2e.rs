@@ -14,7 +14,11 @@ fn dynamic_hip_shared_gemm_descriptor_loads_without_runtime_link_dependency() {
         );
         return;
     };
-    assert!(path.is_file(), "HIP shared GEMM DLL is missing: {}", path.display());
+    assert!(
+        path.is_file(),
+        "HIP shared GEMM DLL is missing: {}",
+        path.display()
+    );
 
     let library = LoadedSharedOperatorLibrary::load(&path)
         .expect("HIP shared GEMM DLL should load without ROCm runtime until execution");
