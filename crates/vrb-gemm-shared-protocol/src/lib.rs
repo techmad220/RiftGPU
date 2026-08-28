@@ -38,6 +38,10 @@ pub enum SharedGemmProtocolError {
     InvalidHeaderLength { actual: u32, expected: usize },
     #[error("shared GEMM metadata length {actual} does not match required length {expected}")]
     LengthMismatch { expected: usize, actual: usize },
+    #[error("shared GEMM metadata declares {actual} resources; expected {expected}")]
+    ResourceCount { expected: u32, actual: u32 },
+    #[error("shared GEMM dimensions must be non-zero; got m={m}, n={n}, k={k}")]
+    ZeroDimension { m: u64, n: u64, k: u64 },
     #[error("shared GEMM dimensions overflow while computing {0}")]
     DimensionOverflow(&'static str),
     #[error("shared GEMM byte length overflow while computing {0}")]
@@ -46,7 +50,6 @@ pub enum SharedGemmProtocolError {
     InvalidDeviceIndex(i32),
 }
 
-#[must_use]
 pub fn encode_control(control: SharedGemmControl) -> Result<Vec<u8>, SharedGemmProtocolError> {
     validate_control(control)?;
     let mut output = Vec::with_capacity(SHARED_GEMM_HEADER_LEN);
@@ -97,9 +100,9 @@ pub fn decode_control(input: &[u8]) -> Result<SharedGemmControl, SharedGemmProto
     }
     let resource_count = read_u32(input, 52);
     if resource_count != SHARED_GEMM_RESOURCE_COUNT as u32 {
-        return Err(SharedGemmProtocolError::LengthMismatch {
-            expected: SHARED_GEMM_RESOURCE_COUNT,
-            actual: resource_count as usize,
+        return Err(SharedGemmProtocolError::ResourceCount {
+            expected: SHARED_GEMM_RESOURCE_COUNT as u32,
+            actual: resource_count,
         });
     }
     let control = SharedGemmControl {
@@ -130,6 +133,13 @@ fn validate_control(control: SharedGemmControl) -> Result<(), SharedGemmProtocol
         return Err(SharedGemmProtocolError::InvalidDeviceIndex(
             control.hip_device_index,
         ));
+    }
+    if control.m == 0 || control.n == 0 || control.k == 0 {
+        return Err(SharedGemmProtocolError::ZeroDimension {
+            m: control.m,
+            n: control.n,
+            k: control.k,
+        });
     }
     let _ = expected_elements(control.m, control.k, "matrix A")?;
     let _ = expected_elements(control.k, control.n, "matrix B")?;
@@ -219,5 +229,19 @@ mod tests {
         })
         .expect_err("negative HIP device must fail");
         assert_eq!(error, SharedGemmProtocolError::InvalidDeviceIndex(-1));
+    }
+
+    #[test]
+    fn zero_dimension_is_rejected_before_resource_creation() {
+        let error = encode_control(SharedGemmControl {
+            m: 1,
+            n: 0,
+            k: 1,
+            alpha: 1.0,
+            beta: 0.0,
+            hip_device_index: 0,
+        })
+        .expect_err("zero-sized shared GEMM must fail");
+        assert_eq!(error, SharedGemmProtocolError::ZeroDimension { m: 1, n: 0, k: 1 });
     }
 }
