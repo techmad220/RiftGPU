@@ -418,6 +418,7 @@ impl LoadedSharedOperatorLibrary {
                     kind: map_operator_kind(info.operator_kind),
                     backend: map_backend_kind(info.backend_kind),
                     memory_kinds: map_memory_kinds(info.memory_kind_bits),
+                    sync_kinds: map_sync_kinds(info.sync_kind_bits),
                     supports_external_synchronization: raw_capability_bits
                         & capability::EXTERNAL_SYNCHRONIZATION
                         != 0,
@@ -580,6 +581,27 @@ fn map_memory_kinds(bits: u64) -> Vec<ExternalMemoryHandleKind> {
         .collect()
 }
 
+fn map_sync_kinds(bits: u64) -> Vec<ExternalSyncHandleKind> {
+    let candidates = [
+        (
+            sync_handle_kind::WIN32_OPAQUE,
+            ExternalSyncHandleKind::Win32Opaque,
+        ),
+        (
+            sync_handle_kind::OPAQUE_FD,
+            ExternalSyncHandleKind::OpaqueFd,
+        ),
+        (
+            sync_handle_kind::TIMELINE,
+            ExternalSyncHandleKind::Timeline,
+        ),
+    ];
+    candidates
+        .into_iter()
+        .filter_map(|(raw, kind)| ((bits & bit_for(raw)) != 0).then_some(kind))
+        .collect()
+}
+
 fn map_resource_to_abi(resource: SharedResourceRegion) -> VrbSharedResourceRegionV1 {
     VrbSharedResourceRegionV1 {
         handle_kind: memory_kind_to_raw(resource.handle_kind),
@@ -680,5 +702,18 @@ mod tests {
             error,
             SharedOperatorLoadError::InvalidCapabilities { operator_id: 7, .. }
         ));
+    }
+
+    #[test]
+    fn standard_sync_kinds_are_preserved() {
+        let bits = bit_for(sync_handle_kind::WIN32_OPAQUE) | bit_for(sync_handle_kind::TIMELINE);
+        let kinds = map_sync_kinds(bits);
+        assert_eq!(
+            kinds,
+            [
+                ExternalSyncHandleKind::Win32Opaque,
+                ExternalSyncHandleKind::Timeline,
+            ]
+        );
     }
 }
