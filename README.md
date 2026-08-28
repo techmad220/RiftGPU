@@ -1,8 +1,8 @@
-# Vulkan ROCm Bridge
+# RiftGPU
 
-A modular, MIT-licensed Rust GPU runtime for coordinating Vulkan and AMD ROCm/HIP on the same machine.
+A modular Rust GPU interoperability layer for coordinating Vulkan and AMD ROCm/HIP on the same machine.
 
-The project is intentionally **not** a Vulkan-to-HIP emulator. HIP work is submitted to the native HIP runtime; Vulkan work is submitted to the native Vulkan driver. The bridge owns discovery, resource interoperability, synchronization, capability routing, plugin loading, and benchmark-driven backend selection.
+RiftGPU is intentionally **not** a Vulkan-to-HIP emulator. HIP work is submitted to the native HIP runtime; Vulkan work is submitted to the native Vulkan driver. The runtime owns discovery, resource interoperability, synchronization, capability routing, plugin loading, and benchmark-driven backend selection.
 
 ## Why
 
@@ -71,7 +71,7 @@ cargo run -p vrb -- doctor --plugin path/to/backend.dll
 
 ## Native-speed model
 
-ROCm is not interpreted by Vulkan. A HIP plugin executes through the real HIP runtime, so its kernels retain native HIP execution characteristics. The bridge's cost is at resource import, synchronization, scheduling, and command submission boundaries. Keeping allocations imported and resident amortizes those costs.
+ROCm is not interpreted by Vulkan. A HIP plugin executes through the real HIP runtime, so its kernels retain native HIP execution characteristics. RiftGPU's cost is at resource import, synchronization, scheduling, and command submission boundaries. Keeping allocations imported and resident amortizes those costs.
 
 The design therefore prefers:
 
@@ -102,9 +102,9 @@ The default policy is `FastestCompatible`:
 
 The bootstrap ordering is not treated as a performance fact. Hardware measurements override it.
 
-## Legal / provenance policy
+## Provenance policy
 
-This is an independently authored MIT implementation. We study public specifications, public API documentation, observable behavior, benchmark methodology, and architectural ideas. We do not copy incompatible implementation code.
+RiftGPU is independently authored. We study public specifications, public API documentation, observable behavior, benchmark methodology, and architectural ideas. We do not copy incompatible implementation code.
 
 See [`LEGAL_PROVENANCE.md`](LEGAL_PROVENANCE.md) for the clean-room rules and source ledger. CI runs `cargo-deny` to reject dependencies and sources outside the allowlisted policy.
 
