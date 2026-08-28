@@ -33,8 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: '1.82.0'
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
       - name: License and source policy
