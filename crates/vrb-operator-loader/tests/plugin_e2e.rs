@@ -8,11 +8,18 @@ use vrb_operators::{Operator, OperatorInvocation, OperatorKind};
 fn dynamic_operator_plugin_round_trip_and_shutdown() {
     let required = std::env::var("VRB_REQUIRE_OPERATOR_PLUGIN_E2E").as_deref() == Ok("1");
     let Some(path) = std::env::var_os("VRB_TEST_OPERATOR_PLUGIN_PATH").map(PathBuf::from) else {
-        assert!(!required, "VRB_TEST_OPERATOR_PLUGIN_PATH is required for operator-plugin E2E");
+        assert!(
+            !required,
+            "VRB_TEST_OPERATOR_PLUGIN_PATH is required for operator-plugin E2E"
+        );
         return;
     };
 
-    assert!(path.is_file(), "operator plugin does not exist: {}", path.display());
+    assert!(
+        path.is_file(),
+        "operator plugin does not exist: {}",
+        path.display()
+    );
 
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
