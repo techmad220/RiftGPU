@@ -22,6 +22,12 @@ Application / inference engine
            AMD GPU
 ```
 
+## Architecture rule
+
+`vrb-core` remains a small infrastructure layer. New compute features are built **on top** through dependency-injected services, versioned plugin contracts, operator crates, and integrations. Model-specific kernels, inference-engine bindings, schedulers, telemetry, cache policy, and framework adapters do not belong in the transport core.
+
+That rule is deliberate: keep the bridge replaceable, testable, and stable while higher-level capabilities evolve independently. See [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ## Current v0.1 architecture
 
 - `vrb-plugin-api` — versioned C ABI for dynamic backend/operator plugins. No Rust trait objects cross a DLL boundary.
