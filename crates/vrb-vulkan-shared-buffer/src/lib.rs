@@ -101,10 +101,7 @@ mod platform {
             }
         }
 
-        let value = match operation_result {
-            Ok(value) => value,
-            Err(error) => return Err(error),
-        };
+        let value = operation_result?;
         if let Some(error) = reclaim_error {
             return Err(error);
         }
