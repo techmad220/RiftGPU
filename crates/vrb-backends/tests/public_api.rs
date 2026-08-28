@@ -40,7 +40,7 @@ fn hip_backend_constructor_identity_and_probe_contract_are_stable() {
 
     match backend.runtime_info() {
         Ok(info) => {
-            assert!(!info.library.as_os_str().is_empty());
+            assert!(!info.library.is_empty());
             assert!(info.runtime_version_raw > 0);
             assert!(!info.devices.is_empty());
         }
@@ -72,7 +72,12 @@ fn vulkan_backend_constructor_identity_and_probe_contract_are_stable() {
             assert!(info.loader_available);
             assert!(!info.devices.is_empty());
             if let Some(preferred) = info.preferred_compute_device() {
-                assert!(preferred.bridge_score() > 0);
+                assert!(preferred.compute_queue);
+                assert!(info
+                    .devices
+                    .iter()
+                    .filter(|device| device.compute_queue)
+                    .all(|device| preferred.bridge_score() <= device.bridge_score()));
             }
         }
         Err(error) => {
