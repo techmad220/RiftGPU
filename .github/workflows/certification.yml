@@ -31,13 +31,20 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Release build
         run: cargo build --workspace --release
-      - name: Dynamic plugin E2E (Windows)
+      - name: Dynamic backend plugin E2E (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $env:VRB_TEST_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_test_plugin.dll'
           $env:VRB_REQUIRE_PLUGIN_E2E = '1'
           cargo test --release -p vrb-backends --test plugin_e2e -- --nocapture --test-threads=1
+      - name: Dynamic operator plugin E2E (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:VRB_TEST_OPERATOR_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_test_operator_plugin.dll'
+          $env:VRB_REQUIRE_OPERATOR_PLUGIN_E2E = '1'
+          cargo test --release -p vrb-operator-loader --test plugin_e2e -- --nocapture --test-threads=1
 
   licenses:
     runs-on: ubuntu-latest
