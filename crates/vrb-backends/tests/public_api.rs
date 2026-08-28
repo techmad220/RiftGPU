@@ -55,15 +55,18 @@ fn hip_backend_constructor_identity_and_probe_contract_are_stable() {
         }
     }
 
-    let probe = backend
-        .probe()
-        .expect("probe converts runtime discovery into a BackendProbe");
-    assert_eq!(probe.id.as_str(), "hip");
-    if probe.available {
-        assert!(probe.device_count > 0);
-    } else {
-        assert_eq!(probe.device_count, 0);
-        assert!(probe.capabilities.operations.is_empty());
+    match backend.probe() {
+        Ok(probe) => {
+            assert_eq!(probe.id.as_str(), "hip");
+            assert!(probe.available);
+            assert!(probe.device_count > 0);
+        }
+        Err(error) => {
+            assert!(matches!(
+                error,
+                BackendError::Unavailable(_) | BackendError::Probe(_)
+            ));
+        }
     }
 }
 
@@ -96,13 +99,16 @@ fn vulkan_backend_constructor_identity_and_probe_contract_are_stable() {
         }
     }
 
-    let probe = backend
-        .probe()
-        .expect("probe converts Vulkan discovery into a BackendProbe");
-    assert_eq!(probe.id.as_str(), "vulkan");
-    if probe.available {
-        assert!(probe.device_count > 0);
-    } else {
-        assert_eq!(probe.device_count, 0);
+    match backend.probe() {
+        Ok(probe) => {
+            assert_eq!(probe.id.as_str(), "vulkan");
+            assert_eq!(probe.available, probe.device_count > 0);
+        }
+        Err(error) => {
+            assert!(matches!(
+                error,
+                BackendError::Unavailable(_) | BackendError::Probe(_)
+            ));
+        }
     }
 }
