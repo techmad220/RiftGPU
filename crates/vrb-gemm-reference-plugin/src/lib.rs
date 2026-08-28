@@ -147,8 +147,9 @@ unsafe fn abi_input<'a>(input_ptr: *const u8, input_len: u64) -> Result<&'a [u8]
 fn map_error(error: &ReferenceGemmError) -> i32 {
     match error {
         ReferenceGemmError::Protocol(_) => status::INVALID_ARGUMENT,
-        ReferenceGemmError::ResourceLimit { .. }
-        | ReferenceGemmError::AddressSpaceOverflow => status::UNSUPPORTED,
+        ReferenceGemmError::ResourceLimit { .. } | ReferenceGemmError::AddressSpaceOverflow => {
+            status::UNSUPPORTED
+        }
     }
 }
 
