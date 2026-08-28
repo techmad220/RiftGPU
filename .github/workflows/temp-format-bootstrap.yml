@@ -21,21 +21,192 @@ jobs:
           ref: bootstrap/v0.1.0
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.82.0'
+          toolchain: '1.88.0'
           components: rustfmt
-      - name: Apply rustfmt
-        run: cargo fmt --all
-      - name: Commit canonical formatting if needed
+      - name: Apply deterministic source hardening
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo 'FORMAT_ALREADY_CLEAN=PASS'
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_required(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f"required patch fragment missing: {label}")
+              return text.replace(old, new)
+
+          interop_path = Path('crates/vrb-backends/src/interop.rs')
+          text = interop_path.read_text()
+          text = replace_required(
+              text,
+              '''            let has_external_memory_win32 = extensions.iter().any(|extension| {
+                  // SAFETY: Vulkan guarantees NUL termination.
+                  unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) }
+                      == khr::external_memory_win32::NAME
+              });
+          ''',
+              '''            let has_external_memory_win32 = extensions.iter().any(|extension| {
+                  // SAFETY: Vulkan guarantees NUL termination.
+                  (unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) })
+                      == khr::external_memory_win32::NAME
+              });
+          ''',
+              'unsafe CStr comparison parser fix',
+          )
+          text = replace_required(
+              text,
+              '''    use std::mem::MaybeUninit;
+              use std::path::{Path, PathBuf};
+          ''',
+              '''    use std::path::PathBuf;
+          ''',
+              'unused imports',
+          )
+          text = replace_required(text, '        library_path: String,\n', '', 'unused HIP library path field')
+          text = replace_required(
+              text,
+              '            let (library, library_path) = load_hip_library()?;\n',
+              '            let (library, _library_path) = load_hip_library()?;\n',
+              'HIP library tuple binding',
+          )
+          text = replace_required(text, '                    library_path,\n', '', 'HIP library path initialization')
+          text = replace_required(
+              text,
+              '''            let mismatch = bytes.iter().position(|value| *value != pattern);
+              // SAFETY: pointer belongs to this memory mapping and is unmapped once.
+              unsafe { self.device.unmap_memory(staging.memory) };
+
+              if let Some(index) = mismatch {
+                  return Err(BackendError::Internal(format!(
+                      "zero-copy verification failed at byte {index}: expected 0x{pattern:02x}, got 0x{:02x}",
+                      bytes[index]
+                  )));
+              }
+          ''',
+              '''            let mismatch = bytes
+                  .iter()
+                  .position(|value| *value != pattern)
+                  .map(|index| (index, bytes[index]));
+              // SAFETY: pointer belongs to this memory mapping and is unmapped once.
+              unsafe { self.device.unmap_memory(staging.memory) };
+
+              if let Some((index, actual)) = mismatch {
+                  return Err(BackendError::Internal(format!(
+                      "zero-copy verification failed at byte {index}: expected 0x{pattern:02x}, got 0x{actual:02x}"
+                  )));
+              }
+          ''',
+              'mapped-memory verification lifetime',
+          )
+          text = replace_required(
+              text,
+              '''        (0..properties.memory_type_count).find(|index| {
+              let supported = memory_type_bits & (1_u32 << index) != 0;
+              let flags = properties.memory_types[*index as usize].property_flags;
+              supported && flags.contains(required)
+          })
+          ''',
+              '''        (0..properties.memory_type_count).find(|index| {
+              let index_value = *index;
+              let supported = memory_type_bits & (1_u32 << index_value) != 0;
+              let flags = properties.memory_types[index_value as usize].property_flags;
+              supported && flags.contains(required)
+          })
+          ''',
+              'memory type index dereference',
+          )
+          text = replace_required(
+              text,
+              '''    #[allow(dead_code)]
+              fn _abi_layout_guard() {
+                  let _ = MaybeUninit::<HipExternalMemoryHandleDesc>::uninit();
+                  let _ = Path::new("amdhip64.dll");
+              }
+
+          ''',
+              '',
+              'dead ABI layout guard',
+          )
+          interop_path.write_text(text)
+
+          vulkan_path = Path('crates/vrb-backends/src/vulkan.rs')
+          text = vulkan_path.read_text()
+          text = replace_required(
+              text,
+              '#[derive(Debug, Clone)]\npub struct VulkanDeviceInfo {\n',
+              '#[derive(Clone)]\npub struct VulkanDeviceInfo {\n',
+              'VulkanDeviceInfo Debug derive',
+          )
+          text = replace_required(
+              text,
+              '#[derive(Debug, Clone)]\npub struct VulkanRuntimeInfo {\n',
+              '#[derive(Clone)]\npub struct VulkanRuntimeInfo {\n',
+              'VulkanRuntimeInfo Debug derive',
+          )
+          text = replace_required(
+              text,
+              '''                    "{}[vendor=0x{:04x},device=0x{:04x},type={:?}]",
+                      device.name, device.vendor_id, device.device_id, device.device_type
+          ''',
+              '''                    "{}[vendor=0x{:04x},device=0x{:04x},type={}]",
+                      device.name,
+                      device.vendor_id,
+                      device.device_id,
+                      physical_device_type_name(device.device_type)
+          ''',
+              'Vulkan inventory device type formatting',
+          )
+          text = replace_required(
+              text,
+              '''                        "selected_device_id=0x{:04x}, selected_type={:?}, api_version={}, external_memory={}, external_semaphore={}; inventory={inventory}",
+                          device.device_id,
+                          device.device_type,
+          ''',
+              '''                        "selected_device_id=0x{:04x}, selected_type={}, api_version={}, external_memory={}, external_semaphore={}; inventory={inventory}",
+                          device.device_id,
+                          physical_device_type_name(device.device_type),
+          ''',
+              'Vulkan selected device type formatting',
+          )
+          text = replace_required(
+              text,
+              'fn external_resource_support(extensions: &BTreeSet<String>) -> (bool, bool) {\n',
+              '''fn physical_device_type_name(value: vk::PhysicalDeviceType) -> &'static str {
+              if value == vk::PhysicalDeviceType::DISCRETE_GPU {
+                  "discrete_gpu"
+              } else if value == vk::PhysicalDeviceType::INTEGRATED_GPU {
+                  "integrated_gpu"
+              } else if value == vk::PhysicalDeviceType::VIRTUAL_GPU {
+                  "virtual_gpu"
+              } else if value == vk::PhysicalDeviceType::CPU {
+                  "cpu"
+              } else {
+                  "other"
+              }
+          }
+
+          fn external_resource_support(extensions: &BTreeSet<String>) -> (bool, bool) {
+          ''',
+              'Vulkan device type formatter',
+          )
+          vulkan_path.write_text(text)
+          PY
+      - name: Apply rustfmt and lock dependencies
+        run: |
+          cargo fmt --all
+          cargo generate-lockfile
+          git diff --check
+      - name: Commit hardened canonical sources if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && git status --porcelain --untracked-files=normal | grep -qv .; then
+            echo 'SOURCE_ALREADY_CLEAN=PASS'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add --all
-          git commit -m 'style: apply canonical rustfmt'
+          git commit -m 'fix: harden and format zero-copy interop'
           git push origin HEAD:bootstrap/v0.1.0
-          echo 'FORMAT_APPLIED=PASS'
+          echo 'SOURCE_HARDENING=PASS'
