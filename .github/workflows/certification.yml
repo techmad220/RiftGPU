@@ -45,6 +45,13 @@ jobs:
           $env:VRB_TEST_OPERATOR_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_test_operator_plugin.dll'
           $env:VRB_REQUIRE_OPERATOR_PLUGIN_E2E = '1'
           cargo test --release -p vrb-operator-loader --test plugin_e2e -- --nocapture --test-threads=1
+      - name: Reference GEMM plugin E2E (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:VRB_REFERENCE_GEMM_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_gemm_reference_plugin.dll'
+          $env:VRB_REQUIRE_REFERENCE_GEMM_E2E = '1'
+          cargo test --release -p vrb-gemm-reference-plugin --test plugin_e2e -- --nocapture --test-threads=1
 
   licenses:
     runs-on: ubuntu-latest
