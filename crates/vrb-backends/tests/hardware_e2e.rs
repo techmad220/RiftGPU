@@ -1,7 +1,8 @@
 #![cfg(target_os = "windows")]
 
 use std::ffi::c_void;
-use vrb_backends::{run_zero_copy_smoke, HipBackend, VulkanBackend};
+use std::time::Instant;
+use vrb_backends::{run_copy_fallback_smoke, run_zero_copy_smoke, HipBackend, VulkanBackend};
 use vrb_core::{BackendError, ComputeBackend};
 
 #[link(name = "kernel32")]
@@ -16,6 +17,16 @@ fn process_handle_count() -> u32 {
     let ok = unsafe { GetProcessHandleCount(process, &mut count) };
     assert_ne!(ok, 0, "GetProcessHandleCount failed");
     count
+}
+
+fn median_us(samples: &mut [u128]) -> u128 {
+    samples.sort_unstable();
+    let middle = samples.len() / 2;
+    if samples.len() & 1 == 0 {
+        (samples[middle - 1] + samples[middle]) / 2
+    } else {
+        samples[middle]
+    }
 }
 
 #[test]
@@ -51,17 +62,24 @@ fn amd_vulkan_hip_bridge_full_hardware_e2e() {
 
     let zero_error = run_zero_copy_smoke(0, 0).expect_err("zero-byte bridge request must fail");
     assert!(matches!(zero_error, BackendError::Internal(_)));
+    let fallback_zero =
+        run_copy_fallback_smoke(0, 0).expect_err("zero-byte copy fallback must fail");
+    assert!(matches!(fallback_zero, BackendError::Internal(_)));
 
     // Warm up loader/runtime state before leak accounting so one-time driver caches
     // cannot be mistaken for a per-transfer resource leak.
     let warmup = run_zero_copy_smoke(1024 * 1024, 0x5a).expect("warmup bridge must succeed");
     assert_eq!(warmup.verified_bytes, 1024 * 1024);
     assert_eq!(warmup.vulkan_device, warmup.hip_device);
+    let fallback_warmup =
+        run_copy_fallback_smoke(1024 * 1024, 0xa5).expect("fallback warmup must succeed");
+    assert_eq!(fallback_warmup.verified_bytes, 1024 * 1024);
+    assert_eq!(fallback_warmup.vulkan_device, fallback_warmup.hip_device);
 
     let handles_before = process_handle_count();
     for iteration in 0_u8..32 {
         let bytes = match iteration % 4 {
-            0 => 1 * 1024 * 1024,
+            0 => 1024 * 1024,
             1 => 4 * 1024 * 1024,
             2 => 8 * 1024 * 1024,
             _ => 16 * 1024 * 1024,
@@ -89,4 +107,38 @@ fn amd_vulkan_hip_bridge_full_hardware_e2e() {
     assert_eq!(large.verified_bytes, 64 * 1024 * 1024);
     assert_eq!(large.vulkan_device, preferred.name);
     assert_eq!(large.hip_device, preferred.name);
+
+    // Criterion 10 receipt: compare two independently executed, correctness-checked
+    // cross-stack transports. No synthetic delay and no claim that one must always
+    // win; the measured receipt records what this exact host actually did.
+    const BENCH_BYTES: u64 = 8 * 1024 * 1024;
+    const BENCH_ITERATIONS: u8 = 5;
+    let mut shared_us = Vec::with_capacity(BENCH_ITERATIONS as usize);
+    let mut fallback_us = Vec::with_capacity(BENCH_ITERATIONS as usize);
+    for iteration in 0..BENCH_ITERATIONS {
+        let pattern = 0x70_u8.wrapping_add(iteration);
+
+        let started = Instant::now();
+        let shared = run_zero_copy_smoke(BENCH_BYTES, pattern)
+            .expect("benchmark shared-resource transition must succeed");
+        shared_us.push(started.elapsed().as_micros());
+        assert_eq!(shared.verified_bytes, BENCH_BYTES);
+
+        let started = Instant::now();
+        let fallback = run_copy_fallback_smoke(BENCH_BYTES, pattern)
+            .expect("benchmark host-copy fallback must succeed");
+        fallback_us.push(started.elapsed().as_micros());
+        assert_eq!(fallback.verified_bytes, BENCH_BYTES);
+        assert!(fallback.transfer_path.contains("host relay"));
+    }
+
+    let shared_median_us = median_us(&mut shared_us);
+    let fallback_median_us = median_us(&mut fallback_us);
+    assert!(shared_median_us > 0);
+    assert!(fallback_median_us > 0);
+    let ratio = fallback_median_us as f64 / shared_median_us as f64;
+    println!(
+        "VRB_BENCH_RECEIPT_JSON={{\"bytes\":{BENCH_BYTES},\"iterations\":{BENCH_ITERATIONS},\"shared_median_us\":{shared_median_us},\"copy_fallback_median_us\":{fallback_median_us},\"fallback_over_shared_ratio\":{ratio:.6}}}"
+    );
+    println!("VRB_E2E_CERT=PASS");
 }
