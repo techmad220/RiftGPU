@@ -117,7 +117,7 @@ impl OperatorSelectionPolicy for FirstCompatible {
             }
         }
 
-        candidates.iter().filter(compatible).next().cloned()
+        candidates.iter().find(compatible).cloned()
     }
 }
 
