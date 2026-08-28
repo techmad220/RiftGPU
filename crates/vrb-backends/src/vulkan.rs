@@ -27,7 +27,11 @@ impl VulkanDeviceInfo {
 
     pub fn bridge_score(&self) -> (u8, u8, u8, u32) {
         (
-            if self.vendor_id == AMD_PCI_VENDOR_ID { 0 } else { 1 },
+            if self.vendor_id == AMD_PCI_VENDOR_ID {
+                0
+            } else {
+                1
+            },
             if self.is_discrete() { 0 } else { 1 },
             if self.external_memory && self.external_semaphore {
                 0
