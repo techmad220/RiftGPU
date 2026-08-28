@@ -1,25 +1,29 @@
 [workspace]
 members = [
-    "crates/vrb",
-    "crates/vrb-backends",
-    "crates/vrb-core",
-    "crates/vrb-operators",
     "crates/vrb-plugin-api",
+    "crates/vrb-core",
+    "crates/vrb-backends",
+    "crates/vrb-cli",
+    "crates/vrb-test-plugin",
+    "crates/vrb-operators",
 ]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-edition = "2024"
-license = "MIT"
+edition = "2021"
 rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/techmad220/vulkan-rocm-bridge"
+authors = ["techmad220 contributors"]
 
 [workspace.dependencies]
-anyhow = "1.0.100"
-ash = "0.38.0"
-libloading = "0.8.9"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
-thiserror = "2.0.17"
-vrb-core = { path = "crates/vrb-core" }
-vrb-plugin-api = { path = "crates/vrb-plugin-api" }
+anyhow = "1.0"
+ash = { version = "0.38", default-features = false, features = ["loaded", "std"] }
+clap = { version = "4.5", features = ["derive"] }
+libloading = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
