@@ -197,9 +197,9 @@ impl SharedOperatorSelectionPolicy for FirstCompatibleShared {
         let compatible = |operator: &&Arc<dyn SharedOperator>| {
             let capabilities = operator.capabilities();
             capabilities.kind == request.kind
-                && request.required_memory_kind.map_or(true, |kind| {
-                    capabilities.memory_kinds.contains(&kind)
-                })
+                && request
+                    .required_memory_kind
+                    .is_none_or(|kind| capabilities.memory_kinds.contains(&kind))
                 && (!request.requires_synchronization
                     || capabilities.supports_external_synchronization)
                 && (!request.requires_proven_zero_copy || capabilities.proven_zero_copy)
@@ -355,7 +355,9 @@ mod tests {
                     signals: &[],
                 },
             ),
-            Err(SharedOperatorError::NoCompatibleOperator(OperatorKind::Custom))
+            Err(SharedOperatorError::NoCompatibleOperator(
+                OperatorKind::Custom
+            ))
         );
     }
 }
