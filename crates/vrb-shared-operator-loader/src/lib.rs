@@ -279,7 +279,8 @@ impl DynamicSharedOperator {
         let execute_status =
             unsafe { (callbacks.execute)(callbacks.user_data as *mut _, &request as *const _) };
         if execute_status != status::OK {
-            if execute_status == status::BUFFER_TOO_SMALL && receipt_len > policy.max_receipt_bytes {
+            if execute_status == status::BUFFER_TOO_SMALL && receipt_len > policy.max_receipt_bytes
+            {
                 return Err(SharedOperatorExecutionError::ReceiptTooLarge {
                     actual: receipt_len,
                     capacity: policy.max_receipt_bytes,
