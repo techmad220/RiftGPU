@@ -1,0 +1,140 @@
+name: Temporary Fix RiftGPU PR9 Cfg
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-pr9-cfg:
+    if: github.event.issue.title == 'run:fix-riftgpu-pr9-cfg-20260828'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/hip-shared-gemm-v0.2
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Apply platform gating, format, clippy, and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('crates/vrb-hip-shared-gemm-plugin/src/lib.rs')
+          s = p.read_text()
+          old = '''use libloading::Library;
+          use std::env;
+          use std::ffi::{c_char, c_void};
+          use std::path::PathBuf;
+          use std::ptr;
+          use vrb_gemm_shared_protocol::{
+              decode_control, expected_resource_lengths, A_RESOURCE_INDEX, B_RESOURCE_INDEX,
+              C_RESOURCE_INDEX, SHARED_GEMM_RESOURCE_COUNT,
+          };
+          use vrb_shared_operator_plugin_api::{
+              backend_kind, capability, expected_execution_request_struct_size,
+              expected_resource_region_struct_size, memory_handle_kind, operator_kind, resource_access,
+              status, VrbSharedOperatorExecutionRequestV1, VrbSharedOperatorInfoV1,
+              VrbSharedOperatorPluginV1, VrbSharedResourceRegionV1, VRB_SHARED_OPERATOR_PLUGIN_ABI_VERSION,
+              VRB_SHARED_OPERATOR_PLUGIN_NAME_CAPACITY,
+          };
+          '''.replace('          ', '')
+          new = '''#[cfg(target_os = "windows")]
+          use libloading::Library;
+          #[cfg(target_os = "windows")]
+          use std::env;
+          use std::ffi::{c_char, c_void};
+          #[cfg(target_os = "windows")]
+          use std::path::PathBuf;
+          use std::ptr;
+          #[cfg(target_os = "windows")]
+          use vrb_gemm_shared_protocol::{
+              decode_control, expected_resource_lengths, A_RESOURCE_INDEX, B_RESOURCE_INDEX,
+              C_RESOURCE_INDEX, SHARED_GEMM_RESOURCE_COUNT,
+          };
+          #[cfg(target_os = "windows")]
+          use vrb_shared_operator_plugin_api::{
+              expected_resource_region_struct_size, resource_access, VrbSharedResourceRegionV1,
+          };
+          use vrb_shared_operator_plugin_api::{
+              backend_kind, capability, expected_execution_request_struct_size, memory_handle_kind,
+              operator_kind, status, VrbSharedOperatorExecutionRequestV1, VrbSharedOperatorInfoV1,
+              VrbSharedOperatorPluginV1, VRB_SHARED_OPERATOR_PLUGIN_ABI_VERSION,
+              VRB_SHARED_OPERATOR_PLUGIN_NAME_CAPACITY,
+          };
+          '''.replace('          ', '')
+          if old not in s:
+              raise SystemExit('top import block did not match expected source')
+          s = s.replace(old, new, 1)
+
+          old = '''const SUCCESS_RECEIPT: &[u8] = b"hip-rocblas-shared-gemm-ok";
+          const HIP_SUCCESS: i32 = 0;
+          const ROCBLAS_STATUS_SUCCESS: i32 = 0;
+          const ROCBLAS_OPERATION_NONE: i32 = 111;
+          const HIP_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT: i32 = 3;
+          '''.replace('          ', '')
+          new = '''#[cfg(target_os = "windows")]
+          const SUCCESS_RECEIPT: &[u8] = b"hip-rocblas-shared-gemm-ok";
+          #[cfg(target_os = "windows")]
+          const HIP_SUCCESS: i32 = 0;
+          #[cfg(target_os = "windows")]
+          const ROCBLAS_STATUS_SUCCESS: i32 = 0;
+          #[cfg(target_os = "windows")]
+          const ROCBLAS_OPERATION_NONE: i32 = 111;
+          #[cfg(target_os = "windows")]
+          const HIP_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT: i32 = 3;
+          '''.replace('          ', '')
+          if old not in s:
+              raise SystemExit('constant block did not match expected source')
+          s = s.replace(old, new, 1)
+
+          old = '''    #[cfg(not(target_os = "windows"))]
+              {
+                  let _ = request;
+                  return status::UNSUPPORTED;
+              }
+          
+              #[cfg(target_os = "windows")]
+              execute_windows(request)
+          '''.replace('          ', '')
+          new = '''    #[cfg(not(target_os = "windows"))]
+              {
+                  let _ = request;
+                  status::UNSUPPORTED
+              }
+          
+              #[cfg(target_os = "windows")]
+              {
+                  execute_windows(request)
+              }
+          '''.replace('          ', '')
+          if old not in s:
+              raise SystemExit('execute cfg block did not match expected source')
+          s = s.replace(old, new, 1)
+
+          marker = 'fn validate_region(region: &VrbSharedResourceRegionV1, access: u32, expected_bytes: u64) -> bool {'
+          if marker not in s:
+              raise SystemExit('validate_region marker missing')
+          s = s.replace(marker, '#[cfg(target_os = "windows")]\n' + marker, 1)
+
+          marker = 'fn write_receipt(request: &VrbSharedOperatorExecutionRequestV1, receipt: &[u8]) -> i32 {'
+          if marker not in s:
+              raise SystemExit('write_receipt marker missing')
+          s = s.replace(marker, '#[cfg(target_os = "windows")]\n' + marker, 1)
+          p.write_text(s)
+          PY
+          cargo fmt --all
+          cargo clippy --workspace --all-targets -- -D warnings
+          git config user.name 'techmad220'
+          git config user.email '143960678+techmad220@users.noreply.github.com'
+          git add crates/vrb-hip-shared-gemm-plugin/src/lib.rs
+          git commit -m 'fix: gate HIP shared GEMM implementation to Windows'
+          git push origin HEAD:feature/hip-shared-gemm-v0.2
+          echo 'RIFTGPU_CFG_FIX=PASS'
