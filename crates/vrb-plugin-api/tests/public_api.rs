@@ -43,7 +43,7 @@ fn capability_bits_are_unique_and_non_overlapping() {
 }
 
 #[test]
-fn ABI_struct_defaults_and_size_helpers_match_real_layout() {
+fn abi_struct_defaults_and_size_helpers_match_real_layout() {
     let info = VrbBackendInfoV1::default();
     assert_eq!(info.struct_size, size_of::<VrbBackendInfoV1>() as u32);
     assert_eq!(info.backend_kind, VrbBackendKind::Other);
