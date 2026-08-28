@@ -118,6 +118,7 @@ pub struct SharedOperatorCapabilities {
     pub kind: OperatorKind,
     pub backend: BackendKind,
     pub memory_kinds: Vec<ExternalMemoryHandleKind>,
+    pub sync_kinds: Vec<ExternalSyncHandleKind>,
     pub supports_external_synchronization: bool,
     /// True only for implementations whose execution path actually consumes the
     /// shared allocation directly rather than relaying tensor bytes through host memory.
@@ -181,6 +182,7 @@ pub trait SharedOperatorSelectionPolicy: Send + Sync {
     fn select(
         &self,
         request: &SharedOperatorRequest,
+        invocation: &SharedOperatorInvocation<'_>,
         candidates: &[Arc<dyn SharedOperator>],
     ) -> Option<Arc<dyn SharedOperator>>;
 }
@@ -192,16 +194,28 @@ impl SharedOperatorSelectionPolicy for FirstCompatibleShared {
     fn select(
         &self,
         request: &SharedOperatorRequest,
+        invocation: &SharedOperatorInvocation<'_>,
         candidates: &[Arc<dyn SharedOperator>],
     ) -> Option<Arc<dyn SharedOperator>> {
         let compatible = |operator: &&Arc<dyn SharedOperator>| {
             let capabilities = operator.capabilities();
+            let invocation_uses_sync = !invocation.waits.is_empty() || !invocation.signals.is_empty();
             capabilities.kind == request.kind
                 && request
                     .required_memory_kind
                     .is_none_or(|kind| capabilities.memory_kinds.contains(&kind))
+                && invocation
+                    .resources
+                    .iter()
+                    .all(|resource| capabilities.memory_kinds.contains(&resource.handle_kind))
                 && (!request.requires_synchronization
                     || capabilities.supports_external_synchronization)
+                && (!invocation_uses_sync || capabilities.supports_external_synchronization)
+                && invocation
+                    .waits
+                    .iter()
+                    .chain(invocation.signals.iter())
+                    .all(|point| capabilities.sync_kinds.contains(&point.handle_kind))
                 && (!request.requires_proven_zero_copy || capabilities.proven_zero_copy)
         };
 
@@ -253,7 +267,7 @@ impl SharedOperatorRegistry {
             .unwrap_or_default();
         let operator = self
             .policy
-            .select(request, candidates)
+            .select(request, &invocation, candidates)
             .ok_or(SharedOperatorError::NoCompatibleOperator(request.kind))?;
         operator.execute_shared(invocation)
     }
@@ -285,6 +299,7 @@ mod tests {
                 kind: OperatorKind::Custom,
                 backend: BackendKind::Plugin,
                 memory_kinds: vec![ExternalMemoryHandleKind::Win32Kmt],
+                sync_kinds: vec![ExternalSyncHandleKind::Win32Opaque],
                 supports_external_synchronization: true,
                 proven_zero_copy: false,
             }
@@ -300,17 +315,25 @@ mod tests {
         }
     }
 
+    fn valid_kmt_resource() -> SharedResourceRegion {
+        SharedResourceRegion {
+            handle_kind: ExternalMemoryHandleKind::Win32Kmt,
+            handle: 1,
+            allocation_size: 64,
+            offset: 0,
+            length: 64,
+            access: ResourceAccess::ReadWrite,
+        }
+    }
+
     #[test]
     fn invalid_region_fails_before_operator_execution() {
         let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
         registry.register(Arc::new(ReceiptOperator));
         let resource = SharedResourceRegion {
-            handle_kind: ExternalMemoryHandleKind::Win32Kmt,
-            handle: 1,
-            allocation_size: 64,
             offset: 48,
             length: 32,
-            access: ResourceAccess::ReadWrite,
+            ..valid_kmt_resource()
         };
         let error = registry
             .execute(
@@ -327,6 +350,56 @@ mod tests {
     }
 
     #[test]
+    fn actual_resource_kind_is_part_of_selection() {
+        let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
+        registry.register(Arc::new(ReceiptOperator));
+        let resource = SharedResourceRegion {
+            handle_kind: ExternalMemoryHandleKind::DmaBuf,
+            ..valid_kmt_resource()
+        };
+        assert_eq!(
+            registry.execute(
+                &SharedOperatorRequest::new(OperatorKind::Custom),
+                SharedOperatorInvocation {
+                    metadata: b"x",
+                    resources: &[resource],
+                    waits: &[],
+                    signals: &[],
+                },
+            ),
+            Err(SharedOperatorError::NoCompatibleOperator(
+                OperatorKind::Custom
+            ))
+        );
+    }
+
+    #[test]
+    fn actual_sync_kind_is_part_of_selection() {
+        let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
+        registry.register(Arc::new(ReceiptOperator));
+        let resource = valid_kmt_resource();
+        let wait = SharedSyncPoint {
+            handle_kind: ExternalSyncHandleKind::Timeline,
+            handle: 2,
+            value: 7,
+        };
+        assert_eq!(
+            registry.execute(
+                &SharedOperatorRequest::new(OperatorKind::Custom),
+                SharedOperatorInvocation {
+                    metadata: b"x",
+                    resources: &[resource],
+                    waits: &[wait],
+                    signals: &[],
+                },
+            ),
+            Err(SharedOperatorError::NoCompatibleOperator(
+                OperatorKind::Custom
+            ))
+        );
+    }
+
+    #[test]
     fn proven_zero_copy_is_not_inferred_from_shared_resource_support() {
         let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
         registry.register(Arc::new(ReceiptOperator));
@@ -337,14 +410,7 @@ mod tests {
             requires_synchronization: true,
             requires_proven_zero_copy: true,
         };
-        let resource = SharedResourceRegion {
-            handle_kind: ExternalMemoryHandleKind::Win32Kmt,
-            handle: 1,
-            allocation_size: 64,
-            offset: 0,
-            length: 64,
-            access: ResourceAccess::ReadWrite,
-        };
+        let resource = valid_kmt_resource();
         assert_eq!(
             registry.execute(
                 &request,
