@@ -34,6 +34,9 @@ fn dynamic_shared_operator_round_trips_borrowed_descriptors_without_claiming_zer
     assert!(capabilities
         .memory_kinds
         .contains(&ExternalMemoryHandleKind::Win32Kmt));
+    assert!(capabilities
+        .sync_kinds
+        .contains(&ExternalSyncHandleKind::Win32Opaque));
 
     let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
     library.register_into(&mut registry);
