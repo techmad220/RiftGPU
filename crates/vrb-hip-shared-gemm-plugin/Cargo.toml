@@ -18,6 +18,7 @@ vrb-backends = { version = "0.1.0", path = "../vrb-backends" }
 vrb-core = { version = "0.1.0", path = "../vrb-core" }
 vrb-gemm-protocol = { version = "0.1.0", path = "../vrb-gemm-protocol" }
 vrb-gemm-reference = { version = "0.1.0", path = "../vrb-gemm-reference" }
+vrb-operators = { version = "0.1.0", path = "../vrb-operators" }
 vrb-shared-operator-loader = { version = "0.1.0", path = "../vrb-shared-operator-loader" }
 vrb-shared-operators = { version = "0.1.0", path = "../vrb-shared-operators" }
 vrb-vulkan-shared-buffer = { version = "0.1.0", path = "../vrb-vulkan-shared-buffer" }
