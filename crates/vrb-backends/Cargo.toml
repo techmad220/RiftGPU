@@ -12,5 +12,5 @@ ash.workspace = true
 libloading.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-vrb-core = { path = "../vrb-core" }
-vrb-plugin-api = { path = "../vrb-plugin-api" }
+vrb-core = { version = "0.1.0", path = "../vrb-core" }
+vrb-plugin-api = { version = "0.1.0", path = "../vrb-plugin-api" }
