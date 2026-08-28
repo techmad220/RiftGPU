@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 use vrb_core::BackendKind;
-use vrb_gemm_protocol::{decode_response, encode_request};
+use vrb_gemm_protocol::{decode_response, encode_request, GemmRequest};
 use vrb_operator_loader::LoadedOperatorLibrary;
 use vrb_operators::{
     FirstCompatible, OperatorInvocation, OperatorKind, OperatorRegistry, OperatorRequest,
@@ -29,16 +29,16 @@ fn reference_gemm_dynamic_plugin_executes_through_di_registry() {
     let mut registry = OperatorRegistry::new(Arc::new(FirstCompatible));
     library.register_into(&mut registry);
 
-    let request_bytes = encode_request(
-        2,
-        2,
-        3,
-        1.0,
-        0.0,
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
-        None,
-    )
+    let request_bytes = encode_request(GemmRequest {
+        m: 2,
+        n: 2,
+        k: 3,
+        alpha: 1.0,
+        beta: 0.0,
+        a: &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        b: &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+        c: None,
+    })
     .expect("GEMM request should encode");
     let request = OperatorRequest {
         kind: OperatorKind::Gemm,
