@@ -24,18 +24,16 @@ fn dynamic_shared_operator_round_trips_borrowed_descriptors_without_claiming_zer
         path.display()
     );
 
-    let library = LoadedSharedOperatorLibrary::load(&path)
-        .expect("shared operator test plugin should load");
+    let library =
+        LoadedSharedOperatorLibrary::load(&path).expect("shared operator test plugin should load");
     assert_eq!(library.plugin_name(), "vrb-test-shared-operator");
     assert_eq!(library.operators().len(), 1);
     let capabilities = library.operators()[0].capabilities();
     assert!(capabilities.supports_external_synchronization);
     assert!(!capabilities.proven_zero_copy);
-    assert!(
-        capabilities
-            .memory_kinds
-            .contains(&ExternalMemoryHandleKind::Win32Kmt)
-    );
+    assert!(capabilities
+        .memory_kinds
+        .contains(&ExternalMemoryHandleKind::Win32Kmt));
 
     let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
     library.register_into(&mut registry);
