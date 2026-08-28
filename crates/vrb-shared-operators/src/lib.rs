@@ -199,7 +199,8 @@ impl SharedOperatorSelectionPolicy for FirstCompatibleShared {
     ) -> Option<Arc<dyn SharedOperator>> {
         let compatible = |operator: &&Arc<dyn SharedOperator>| {
             let capabilities = operator.capabilities();
-            let invocation_uses_sync = !invocation.waits.is_empty() || !invocation.signals.is_empty();
+            let invocation_uses_sync =
+                !invocation.waits.is_empty() || !invocation.signals.is_empty();
             capabilities.kind == request.kind
                 && request
                     .required_memory_kind
