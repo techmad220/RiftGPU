@@ -1,0 +1,14 @@
+[package]
+name = "vrb-test-plugin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vrb-plugin-api = { version = "0.1.0", path = "../vrb-plugin-api" }
