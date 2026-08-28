@@ -183,10 +183,17 @@ fn candidate_libraries() -> Vec<PathBuf> {
     {
         for variable in ["HIP_PATH", "ROCM_PATH"] {
             if let Some(root) = env::var_os(variable) {
-                candidates.push(PathBuf::from(&root).join("bin").join("amdhip64.dll"));
+                let bin = PathBuf::from(&root).join("bin");
+                candidates.push(bin.join("amdhip64.dll"));
+                for major in (5..=9).rev() {
+                    candidates.push(bin.join(format!("amdhip64_{major}.dll")));
+                }
             }
         }
         candidates.push(PathBuf::from("amdhip64.dll"));
+        for major in (5..=9).rev() {
+            candidates.push(PathBuf::from(format!("amdhip64_{major}.dll")));
+        }
     }
 
     #[cfg(target_os = "linux")]

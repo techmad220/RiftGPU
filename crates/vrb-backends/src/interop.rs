@@ -11,6 +11,17 @@ pub struct ZeroCopySmokeReport {
     pub synchronization: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopyFallbackReport {
+    pub vulkan_device: String,
+    pub hip_device: String,
+    pub bytes: u64,
+    pub pattern: u8,
+    pub verified_bytes: u64,
+    pub transfer_path: &'static str,
+    pub synchronization: &'static str,
+}
+
 #[cfg(target_os = "windows")]
 pub fn run_zero_copy_smoke(bytes: u64, pattern: u8) -> Result<ZeroCopySmokeReport, BackendError> {
     windows::run(bytes, pattern)
@@ -25,8 +36,26 @@ pub fn run_zero_copy_smoke(_bytes: u64, _pattern: u8) -> Result<ZeroCopySmokeRep
 }
 
 #[cfg(target_os = "windows")]
+pub fn run_copy_fallback_smoke(
+    bytes: u64,
+    pattern: u8,
+) -> Result<CopyFallbackReport, BackendError> {
+    windows::run_copy_fallback(bytes, pattern)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn run_copy_fallback_smoke(
+    _bytes: u64,
+    _pattern: u8,
+) -> Result<CopyFallbackReport, BackendError> {
+    Err(BackendError::Unsupported(
+        "the v0.1 copy fallback certification path currently implements Windows only".to_owned(),
+    ))
+}
+
+#[cfg(target_os = "windows")]
 mod windows {
-    use super::ZeroCopySmokeReport;
+    use super::{CopyFallbackReport, ZeroCopySmokeReport};
     use ash::{khr, vk, Device, Entry, Instance};
     use libloading::Library;
     use std::env;
@@ -34,10 +63,12 @@ mod windows {
     use std::path::PathBuf;
     use std::ptr;
     use std::slice;
+    use std::sync::{Mutex, OnceLock};
     use vrb_core::BackendError;
 
     const AMD_PCI_VENDOR_ID: u32 = 0x1002;
     const HIP_SUCCESS: i32 = 0;
+    const HIP_MEMCPY_DEVICE_TO_HOST: i32 = 2;
     const HIP_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT: i32 = 3;
     const DEFAULT_MAX_SMOKE_BYTES: u64 = 256 * 1024 * 1024;
 
@@ -58,6 +89,9 @@ mod windows {
     ) -> HipError;
     type HipDestroyExternalMemory = unsafe extern "C" fn(HipExternalMemory) -> HipError;
     type HipMemset = unsafe extern "C" fn(*mut c_void, i32, usize) -> HipError;
+    type HipMalloc = unsafe extern "C" fn(*mut *mut c_void, usize) -> HipError;
+    type HipFree = unsafe extern "C" fn(*mut c_void) -> HipError;
+    type HipMemcpy = unsafe extern "C" fn(*mut c_void, *const c_void, usize, i32) -> HipError;
     type HipDeviceSynchronize = unsafe extern "C" fn() -> HipError;
     type HipGetErrorString = unsafe extern "C" fn(HipError) -> *const c_char;
 
@@ -102,6 +136,9 @@ mod windows {
         external_memory_get_mapped_buffer: HipExternalMemoryGetMappedBuffer,
         destroy_external_memory: HipDestroyExternalMemory,
         memset: HipMemset,
+        malloc: HipMalloc,
+        free: HipFree,
+        memcpy: HipMemcpy,
         device_synchronize: HipDeviceSynchronize,
         get_error_string: Option<HipGetErrorString>,
     }
@@ -134,6 +171,9 @@ mod windows {
                     b"hipDestroyExternalMemory\0",
                 )?;
                 let memset = load_required::<HipMemset>(&library, b"hipMemset\0")?;
+                let malloc = load_required::<HipMalloc>(&library, b"hipMalloc\0")?;
+                let free = load_required::<HipFree>(&library, b"hipFree\0")?;
+                let memcpy = load_required::<HipMemcpy>(&library, b"hipMemcpy\0")?;
                 let device_synchronize =
                     load_required::<HipDeviceSynchronize>(&library, b"hipDeviceSynchronize\0")?;
                 let get_error_string = library
@@ -151,6 +191,9 @@ mod windows {
                     external_memory_get_mapped_buffer,
                     destroy_external_memory,
                     memset,
+                    malloc,
+                    free,
+                    memcpy,
                     device_synchronize,
                     get_error_string,
                 };
@@ -317,6 +360,50 @@ mod windows {
             }
             Ok(pointer)
         }
+        fn allocate_device_memory(&self, bytes: usize) -> Result<*mut c_void, BackendError> {
+            let mut pointer = ptr::null_mut();
+            self.check(
+                unsafe { (self.malloc)(&mut pointer, bytes) },
+                "hipMalloc(copy fallback)",
+            )?;
+            if pointer.is_null() {
+                return Err(BackendError::Internal(
+                    "hipMalloc succeeded but returned a null pointer".to_owned(),
+                ));
+            }
+            Ok(pointer)
+        }
+
+        fn copy_device_to_host(
+            &self,
+            destination: &mut [u8],
+            source: *mut c_void,
+        ) -> Result<(), BackendError> {
+            self.check(
+                unsafe {
+                    (self.memcpy)(
+                        destination.as_mut_ptr().cast::<c_void>(),
+                        source.cast_const(),
+                        destination.len(),
+                        HIP_MEMCPY_DEVICE_TO_HOST,
+                    )
+                },
+                "hipMemcpy(DeviceToHost copy fallback)",
+            )
+        }
+    }
+
+    struct HipDeviceMemoryGuard<'a> {
+        runtime: &'a HipRuntime,
+        pointer: *mut c_void,
+    }
+
+    impl Drop for HipDeviceMemoryGuard<'_> {
+        fn drop(&mut self) {
+            if !self.pointer.is_null() {
+                let _ = unsafe { (self.runtime.free)(self.pointer) };
+            }
+        }
     }
 
     struct HipExternalMemoryGuard<'a> {
@@ -330,6 +417,22 @@ mod windows {
                 // SAFETY: guard owns exactly one imported HIP external-memory
                 // handle and destroys it once before the Vulkan allocation dies.
                 let _ = unsafe { (self.runtime.destroy_external_memory)(self.handle) };
+            }
+        }
+    }
+
+    struct HipMappedBufferGuard<'a> {
+        runtime: &'a HipRuntime,
+        pointer: *mut c_void,
+    }
+
+    impl Drop for HipMappedBufferGuard<'_> {
+        fn drop(&mut self) {
+            if !self.pointer.is_null() {
+                // HIP mirrors CUDA external-memory mapped-buffer ownership: the
+                // mapped device pointer is a distinct resource and must be freed
+                // before the imported external-memory object is destroyed.
+                let _ = unsafe { (self.runtime.free)(self.pointer) };
             }
         }
     }
@@ -530,7 +633,7 @@ mod windows {
         fn create_staging_buffer(&self, bytes: u64) -> Result<VulkanBuffer, BackendError> {
             let info = vk::BufferCreateInfo::default()
                 .size(bytes)
-                .usage(vk::BufferUsageFlags::TRANSFER_DST)
+                .usage(vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
             // SAFETY: create data is valid.
             let buffer = unsafe { self.device.create_buffer(&info, None) }.map_err(|error| {
@@ -586,6 +689,160 @@ mod windows {
                 memory,
                 logical_size: bytes,
                 allocation_size: requirements.size,
+            })
+        }
+
+        fn create_device_buffer(&self, bytes: u64) -> Result<VulkanBuffer, BackendError> {
+            let info = vk::BufferCreateInfo::default()
+                .size(bytes)
+                .usage(vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            let buffer = unsafe { self.device.create_buffer(&info, None) }.map_err(|error| {
+                BackendError::Internal(format!("fallback vkCreateBuffer: {error:?}"))
+            })?;
+            let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
+            let memory_properties = unsafe {
+                self.instance
+                    .get_physical_device_memory_properties(self.physical_device)
+            };
+            let memory_type_index = find_memory_type(
+                &memory_properties,
+                requirements.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )
+            .ok_or_else(|| {
+                unsafe { self.device.destroy_buffer(buffer, None) };
+                BackendError::Unsupported(
+                    "no device-local memory type is available for copy fallback".to_owned(),
+                )
+            })?;
+            let allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(requirements.size)
+                .memory_type_index(memory_type_index);
+            let memory = match unsafe { self.device.allocate_memory(&allocate_info, None) } {
+                Ok(memory) => memory,
+                Err(error) => {
+                    unsafe { self.device.destroy_buffer(buffer, None) };
+                    return Err(BackendError::Internal(format!(
+                        "fallback vkAllocateMemory: {error:?}"
+                    )));
+                }
+            };
+            if let Err(error) = unsafe { self.device.bind_buffer_memory(buffer, memory, 0) } {
+                unsafe {
+                    self.device.free_memory(memory, None);
+                    self.device.destroy_buffer(buffer, None);
+                }
+                return Err(BackendError::Internal(format!(
+                    "fallback vkBindBufferMemory: {error:?}"
+                )));
+            }
+            Ok(VulkanBuffer {
+                device: self.device.clone(),
+                buffer,
+                memory,
+                logical_size: bytes,
+                allocation_size: requirements.size,
+            })
+        }
+
+        fn write_staging(&self, staging: &VulkanBuffer, data: &[u8]) -> Result<(), BackendError> {
+            if data.len() as u64 != staging.logical_size {
+                return Err(BackendError::Internal(format!(
+                    "staging write length {} does not match buffer size {}",
+                    data.len(),
+                    staging.logical_size
+                )));
+            }
+            let pointer = unsafe {
+                self.device.map_memory(
+                    staging.memory,
+                    0,
+                    staging.logical_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+            }
+            .map_err(|error| {
+                BackendError::Internal(format!("vkMapMemory(upload staging): {error:?}"))
+            })?;
+            unsafe {
+                ptr::copy_nonoverlapping(data.as_ptr(), pointer.cast::<u8>(), data.len());
+                self.device.unmap_memory(staging.memory);
+            }
+            Ok(())
+        }
+
+        fn copy_staging_to_device(
+            &self,
+            staging: &VulkanBuffer,
+            device_buffer: &VulkanBuffer,
+        ) -> Result<(), BackendError> {
+            self.submit_one_time(|command_buffer| {
+                let host_barrier = vk::BufferMemoryBarrier::default()
+                    .src_access_mask(vk::AccessFlags::HOST_WRITE)
+                    .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                    .src_queue_family_index(self.queue_family_index)
+                    .dst_queue_family_index(self.queue_family_index)
+                    .buffer(staging.buffer)
+                    .offset(0)
+                    .size(staging.logical_size);
+                unsafe {
+                    self.device.cmd_pipeline_barrier(
+                        command_buffer,
+                        vk::PipelineStageFlags::HOST,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::DependencyFlags::empty(),
+                        &[],
+                        &[host_barrier],
+                        &[],
+                    )
+                };
+                let region = vk::BufferCopy::default().size(staging.logical_size);
+                unsafe {
+                    self.device.cmd_copy_buffer(
+                        command_buffer,
+                        staging.buffer,
+                        device_buffer.buffer,
+                        &[region],
+                    )
+                };
+            })
+        }
+
+        fn copy_device_to_staging(
+            &self,
+            device_buffer: &VulkanBuffer,
+            staging: &VulkanBuffer,
+        ) -> Result<(), BackendError> {
+            self.submit_one_time(|command_buffer| {
+                let region = vk::BufferCopy::default().size(device_buffer.logical_size);
+                unsafe {
+                    self.device.cmd_copy_buffer(
+                        command_buffer,
+                        device_buffer.buffer,
+                        staging.buffer,
+                        &[region],
+                    )
+                };
+                let host_barrier = vk::BufferMemoryBarrier::default()
+                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                    .dst_access_mask(vk::AccessFlags::HOST_READ)
+                    .src_queue_family_index(self.queue_family_index)
+                    .dst_queue_family_index(self.queue_family_index)
+                    .buffer(staging.buffer)
+                    .offset(0)
+                    .size(staging.logical_size);
+                unsafe {
+                    self.device.cmd_pipeline_barrier(
+                        command_buffer,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::HOST,
+                        vk::DependencyFlags::empty(),
+                        &[],
+                        &[host_barrier],
+                        &[],
+                    )
+                };
             })
         }
 
@@ -803,11 +1060,164 @@ mod windows {
         }
     }
 
-    pub(super) fn run(bytes: u64, pattern: u8) -> Result<ZeroCopySmokeReport, BackendError> {
+    struct BridgeRuntime {
+        vulkan: VulkanContext,
+        hip: HipRuntime,
+        hip_device_index: i32,
+        hip_device_name: String,
+    }
+
+    impl BridgeRuntime {
+        fn create() -> Result<Self, BackendError> {
+            let vulkan = VulkanContext::create()?;
+            let hip = HipRuntime::load()?;
+            let (hip_device_index, hip_device_name) = hip.select_device(&vulkan.device_name)?;
+            Ok(Self {
+                vulkan,
+                hip,
+                hip_device_index,
+                hip_device_name,
+            })
+        }
+
+        fn select_hip_device(&self) -> Result<(), BackendError> {
+            self.hip.check(
+                unsafe { (self.hip.set_device)(self.hip_device_index) },
+                "hipSetDevice(persistent bridge runtime)",
+            )
+        }
+
+        fn run_zero_copy(
+            &mut self,
+            bytes: u64,
+            pattern: u8,
+            usize_bytes: usize,
+        ) -> Result<ZeroCopySmokeReport, BackendError> {
+            self.select_hip_device()?;
+
+            let shared = self.vulkan.create_shared_buffer(bytes)?;
+            let staging = self.vulkan.create_staging_buffer(bytes)?;
+            let handle = self.vulkan.export_kmt_handle(&shared)?;
+
+            self.vulkan.release_to_external(&shared)?;
+            let external_memory = self.hip.import_memory(handle, shared.allocation_size)?;
+            let external_memory_guard = HipExternalMemoryGuard {
+                runtime: &self.hip,
+                handle: external_memory,
+            };
+            let hip_pointer = self
+                .hip
+                .map_external_memory(external_memory_guard.handle, bytes)?;
+            let mapped_buffer_guard = HipMappedBufferGuard {
+                runtime: &self.hip,
+                pointer: hip_pointer,
+            };
+            self.hip.check(
+                unsafe {
+                    (self.hip.memset)(mapped_buffer_guard.pointer, i32::from(pattern), usize_bytes)
+                },
+                "hipMemset(shared Vulkan memory)",
+            )?;
+            self.hip.check(
+                unsafe { (self.hip.device_synchronize)() },
+                "hipDeviceSynchronize",
+            )?;
+            drop(mapped_buffer_guard);
+            drop(external_memory_guard);
+
+            self.vulkan.acquire_and_copy_to_staging(&shared, &staging)?;
+            let verified_bytes = self.vulkan.verify_staging(&staging, pattern)?;
+
+            Ok(ZeroCopySmokeReport {
+                vulkan_device: self.vulkan.device_name.clone(),
+                hip_device: self.hip_device_name.clone(),
+                bytes,
+                pattern,
+                verified_bytes,
+                external_memory_handle:
+                    "VK_OPAQUE_WIN32_KMT / hipExternalMemoryHandleTypeOpaqueWin32Kmt",
+                synchronization:
+                    "Vulkan EXTERNAL queue-family ownership + host queue/HIP synchronization",
+            })
+        }
+
+        fn run_copy_fallback(
+            &mut self,
+            bytes: u64,
+            pattern: u8,
+            usize_bytes: usize,
+        ) -> Result<CopyFallbackReport, BackendError> {
+            self.select_hip_device()?;
+
+            let upload = self.vulkan.create_staging_buffer(bytes)?;
+            let device_buffer = self.vulkan.create_device_buffer(bytes)?;
+            let readback = self.vulkan.create_staging_buffer(bytes)?;
+
+            let hip_pointer = self.hip.allocate_device_memory(usize_bytes)?;
+            let hip_guard = HipDeviceMemoryGuard {
+                runtime: &self.hip,
+                pointer: hip_pointer,
+            };
+            self.hip.check(
+                unsafe { (self.hip.memset)(hip_guard.pointer, i32::from(pattern), usize_bytes) },
+                "hipMemset(copy fallback device allocation)",
+            )?;
+            self.hip.check(
+                unsafe { (self.hip.device_synchronize)() },
+                "hipDeviceSynchronize",
+            )?;
+
+            let mut host_relay = vec![0_u8; usize_bytes];
+            self.hip
+                .copy_device_to_host(&mut host_relay, hip_guard.pointer)?;
+            self.hip.check(
+                unsafe { (self.hip.device_synchronize)() },
+                "hipDeviceSynchronize after D2H",
+            )?;
+            drop(hip_guard);
+
+            self.vulkan.write_staging(&upload, &host_relay)?;
+            self.vulkan
+                .copy_staging_to_device(&upload, &device_buffer)?;
+            self.vulkan
+                .copy_device_to_staging(&device_buffer, &readback)?;
+            let verified_bytes = self.vulkan.verify_staging(&readback, pattern)?;
+
+            Ok(CopyFallbackReport {
+                vulkan_device: self.vulkan.device_name.clone(),
+                hip_device: self.hip_device_name.clone(),
+                bytes,
+                pattern,
+                verified_bytes,
+                transfer_path: "HIP device -> host relay -> Vulkan upload -> Vulkan device",
+                synchronization: "hipDeviceSynchronize + synchronous Vulkan queue submissions",
+            })
+        }
+    }
+
+    static BRIDGE_RUNTIME: OnceLock<Mutex<Option<BridgeRuntime>>> = OnceLock::new();
+
+    fn with_bridge_runtime<T>(
+        operation: impl FnOnce(&mut BridgeRuntime) -> Result<T, BackendError>,
+    ) -> Result<T, BackendError> {
+        let runtime = BRIDGE_RUNTIME.get_or_init(|| Mutex::new(None));
+        let mut guard = runtime.lock().map_err(|_| {
+            BackendError::Internal("persistent bridge runtime lock is poisoned".to_owned())
+        })?;
+        if guard.is_none() {
+            *guard = Some(BridgeRuntime::create()?);
+        }
+        let runtime = guard.as_mut().ok_or_else(|| {
+            BackendError::Internal("persistent bridge runtime initialization failed".to_owned())
+        })?;
+        operation(runtime)
+    }
+
+    fn validate_transfer_size(bytes: u64, label: &str) -> Result<usize, BackendError> {
         if bytes == 0 {
-            return Err(BackendError::Internal(
-                "zero-copy smoke size must be greater than zero".to_owned(),
-            ));
+            return Err(BackendError::Internal(format!(
+                "{label} size must be greater than zero"
+            )));
         }
         let max_bytes = env::var("VRB_MAX_SMOKE_BYTES")
             .ok()
@@ -818,51 +1228,21 @@ mod windows {
                 "requested {bytes} bytes exceeds VRB_MAX_SMOKE_BYTES={max_bytes}"
             )));
         }
-        let usize_bytes = usize::try_from(bytes)
-            .map_err(|_| BackendError::Unsupported("smoke size does not fit usize".to_owned()))?;
+        usize::try_from(bytes)
+            .map_err(|_| BackendError::Unsupported(format!("{label} size does not fit usize")))
+    }
 
-        let vulkan = VulkanContext::create()?;
-        let shared = vulkan.create_shared_buffer(bytes)?;
-        let staging = vulkan.create_staging_buffer(bytes)?;
-        let handle = vulkan.export_kmt_handle(&shared)?;
+    pub(super) fn run(bytes: u64, pattern: u8) -> Result<ZeroCopySmokeReport, BackendError> {
+        let usize_bytes = validate_transfer_size(bytes, "zero-copy smoke")?;
+        with_bridge_runtime(|runtime| runtime.run_zero_copy(bytes, pattern, usize_bytes))
+    }
 
-        let hip = HipRuntime::load()?;
-        let (_hip_index, hip_device) = hip.select_device(&vulkan.device_name)?;
-
-        vulkan.release_to_external(&shared)?;
-        let external_memory = hip.import_memory(handle, shared.allocation_size)?;
-        let external_memory_guard = HipExternalMemoryGuard {
-            runtime: &hip,
-            handle: external_memory,
-        };
-        let hip_pointer = hip.map_external_memory(external_memory_guard.handle, bytes)?;
-        // SAFETY: mapped device pointer represents at least `bytes` bytes in the
-        // imported Vulkan allocation; pattern is converted to hipMemset's int value.
-        hip.check(
-            unsafe { (hip.memset)(hip_pointer, i32::from(pattern), usize_bytes) },
-            "hipMemset(shared Vulkan memory)",
-        )?;
-        // SAFETY: runtime is initialized and selected device is current.
-        hip.check(
-            unsafe { (hip.device_synchronize)() },
-            "hipDeviceSynchronize",
-        )?;
-        drop(external_memory_guard);
-
-        vulkan.acquire_and_copy_to_staging(&shared, &staging)?;
-        let verified_bytes = vulkan.verify_staging(&staging, pattern)?;
-
-        Ok(ZeroCopySmokeReport {
-            vulkan_device: vulkan.device_name.clone(),
-            hip_device,
-            bytes,
-            pattern,
-            verified_bytes,
-            external_memory_handle:
-                "VK_OPAQUE_WIN32_KMT / hipExternalMemoryHandleTypeOpaqueWin32Kmt",
-            synchronization:
-                "Vulkan EXTERNAL queue-family ownership + host queue/HIP synchronization",
-        })
+    pub(super) fn run_copy_fallback(
+        bytes: u64,
+        pattern: u8,
+    ) -> Result<CopyFallbackReport, BackendError> {
+        let usize_bytes = validate_transfer_size(bytes, "copy fallback")?;
+        with_bridge_runtime(|runtime| runtime.run_copy_fallback(bytes, pattern, usize_bytes))
     }
 
     fn select_vulkan_device(
@@ -965,10 +1345,17 @@ mod windows {
         let mut candidates = Vec::new();
         for variable in ["HIP_PATH", "ROCM_PATH"] {
             if let Some(root) = env::var_os(variable) {
-                candidates.push(PathBuf::from(&root).join("bin").join("amdhip64.dll"));
+                let bin = PathBuf::from(&root).join("bin");
+                candidates.push(bin.join("amdhip64.dll"));
+                for major in (5..=9).rev() {
+                    candidates.push(bin.join(format!("amdhip64_{major}.dll")));
+                }
             }
         }
         candidates.push(PathBuf::from("amdhip64.dll"));
+        for major in (5..=9).rev() {
+            candidates.push(PathBuf::from(format!("amdhip64_{major}.dll")));
+        }
         candidates
     }
 
@@ -1010,7 +1397,7 @@ mod windows {
             // hipExternalMemoryHandleDesc: 4-byte enum + alignment + 16-byte union
             // + u64 size + u32 flags + 16*u32 reserved = 104 bytes on Win64.
             assert_eq!(std::mem::size_of::<HipExternalMemoryHandleDesc>(), 104);
-            assert_eq!(std::mem::size_of::<HipExternalMemoryBufferDesc>(), 80);
+            assert_eq!(std::mem::size_of::<HipExternalMemoryBufferDesc>(), 88);
         }
 
         #[test]
