@@ -1,0 +1,13 @@
+[package]
+name = "vrb-test-operator-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vrb-operator-plugin-api = { version = "0.1.0", path = "../vrb-operator-plugin-api" }
