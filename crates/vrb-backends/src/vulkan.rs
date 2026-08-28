@@ -6,21 +6,52 @@ use vrb_core::{
     OperationKind,
 };
 
+const AMD_PCI_VENDOR_ID: u32 = 0x1002;
+
 #[derive(Debug, Clone)]
 pub struct VulkanDeviceInfo {
     pub name: String,
     pub vendor_id: u32,
     pub device_id: u32,
     pub api_version: u32,
+    pub device_type: vk::PhysicalDeviceType,
     pub compute_queue: bool,
     pub external_memory: bool,
     pub external_semaphore: bool,
+}
+
+impl VulkanDeviceInfo {
+    pub fn is_discrete(&self) -> bool {
+        self.device_type == vk::PhysicalDeviceType::DISCRETE_GPU
+    }
+
+    pub fn bridge_score(&self) -> (u8, u8, u8, u32) {
+        (
+            if self.vendor_id == AMD_PCI_VENDOR_ID { 0 } else { 1 },
+            if self.is_discrete() { 0 } else { 1 },
+            if self.external_memory && self.external_semaphore {
+                0
+            } else {
+                1
+            },
+            self.device_id,
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct VulkanRuntimeInfo {
     pub loader_available: bool,
     pub devices: Vec<VulkanDeviceInfo>,
+}
+
+impl VulkanRuntimeInfo {
+    pub fn preferred_compute_device(&self) -> Option<&VulkanDeviceInfo> {
+        self.devices
+            .iter()
+            .filter(|device| device.compute_queue)
+            .min_by_key(|device| device.bridge_score())
+    }
 }
 
 #[derive(Debug)]
@@ -101,6 +132,7 @@ impl VulkanBackend {
                     vendor_id: properties.vendor_id,
                     device_id: properties.device_id,
                     api_version: properties.api_version,
+                    device_type: properties.device_type,
                     compute_queue,
                     external_memory,
                     external_semaphore,
@@ -141,28 +173,37 @@ impl ComputeBackend for VulkanBackend {
             .iter()
             .filter(|device| device.compute_queue)
             .collect();
-        let first = compute_devices.first().copied();
-        let external_memory = compute_devices.iter().any(|device| device.external_memory);
-        let external_semaphore = compute_devices
+        let preferred = info.preferred_compute_device();
+        let external_memory = preferred.is_some_and(|device| device.external_memory);
+        let external_semaphore = preferred.is_some_and(|device| device.external_semaphore);
+        let inventory = compute_devices
             .iter()
-            .any(|device| device.external_semaphore);
+            .map(|device| {
+                format!(
+                    "{}[vendor=0x{:04x},device=0x{:04x},type={:?}]",
+                    device.name, device.vendor_id, device.device_id, device.device_type
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
 
         Ok(BackendProbe {
             id: self.id.clone(),
             kind: BackendKind::Vulkan,
-            name: first
+            name: preferred
                 .map(|device| device.name.clone())
                 .unwrap_or_else(|| "Vulkan".to_owned()),
-            vendor: first
+            vendor: preferred
                 .map(|device| format!("PCI vendor 0x{:04x}", device.vendor_id))
                 .unwrap_or_default(),
-            available: !compute_devices.is_empty(),
+            available: preferred.is_some(),
             device_count: compute_devices.len() as u32,
-            detail: first
+            detail: preferred
                 .map(|device| {
                     format!(
-                        "device_id=0x{:04x}, api_version={}, external_memory={}, external_semaphore={}",
+                        "selected_device_id=0x{:04x}, selected_type={:?}, api_version={}, external_memory={}, external_semaphore={}; inventory={inventory}",
                         device.device_id,
+                        device.device_type,
                         device.api_version,
                         device.external_memory,
                         device.external_semaphore
@@ -210,6 +251,24 @@ fn external_resource_support(extensions: &BTreeSet<String>) -> (bool, bool) {
 mod tests {
     use super::*;
 
+    fn device(
+        name: &str,
+        vendor_id: u32,
+        device_id: u32,
+        device_type: vk::PhysicalDeviceType,
+    ) -> VulkanDeviceInfo {
+        VulkanDeviceInfo {
+            name: name.to_owned(),
+            vendor_id,
+            device_id,
+            api_version: vk::API_VERSION_1_3,
+            device_type,
+            compute_queue: true,
+            external_memory: true,
+            external_semaphore: true,
+        }
+    }
+
     #[test]
     fn platform_extension_detection_is_deterministic() {
         let mut extensions = BTreeSet::new();
@@ -223,5 +282,31 @@ mod tests {
             extensions.insert("VK_KHR_external_memory_fd".to_owned());
             assert_eq!(external_resource_support(&extensions), (true, false));
         }
+    }
+
+    #[test]
+    fn preferred_device_chooses_discrete_amd_over_integrated_amd() {
+        let info = VulkanRuntimeInfo {
+            loader_available: true,
+            devices: vec![
+                device(
+                    "AMD Radeon(TM) Graphics",
+                    AMD_PCI_VENDOR_ID,
+                    0x164e,
+                    vk::PhysicalDeviceType::INTEGRATED_GPU,
+                ),
+                device(
+                    "AMD Radeon RX 6800 XT",
+                    AMD_PCI_VENDOR_ID,
+                    0x73bf,
+                    vk::PhysicalDeviceType::DISCRETE_GPU,
+                ),
+            ],
+        };
+
+        assert_eq!(
+            info.preferred_compute_device().unwrap().name,
+            "AMD Radeon RX 6800 XT"
+        );
     }
 }
