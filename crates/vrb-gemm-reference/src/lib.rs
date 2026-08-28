@@ -111,7 +111,7 @@ pub fn execute_gemm_bytes(input: &[u8], limits: GemmLimits) -> Result<Vec<u8>, R
         .map_err(|_| ReferenceGemmError::AddressSpaceOverflow)?;
 
     let mut output = vec![0.0_f32; output_elements];
-    if request.meta.beta != 0.0 && let Some(c) = request.c.as_deref() {
+    if let (true, Some(c)) = (request.meta.beta != 0.0, request.c.as_deref()) {
         for (destination, source) in output.iter_mut().zip(c.iter().copied()) {
             *destination = request.meta.beta * source;
         }
