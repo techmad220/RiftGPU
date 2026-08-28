@@ -3,8 +3,8 @@ use vrb_operators::OperatorKind;
 use vrb_shared_operator_loader::LoadedSharedOperatorLibrary;
 use vrb_shared_operators::{
     ExternalMemoryHandleKind, ExternalSyncHandleKind, FirstCompatibleShared, ResourceAccess,
-    SharedOperatorInvocation, SharedOperatorRegistry, SharedOperatorRequest, SharedResourceRegion,
-    SharedSyncPoint,
+    SharedOperator, SharedOperatorInvocation, SharedOperatorRegistry, SharedOperatorRequest,
+    SharedResourceRegion, SharedSyncPoint,
 };
 
 #[test]
