@@ -13,14 +13,16 @@ applications / framework adapters
             |
       operator services
             |
-      vrb-operators
-            |
-         vrb-core
+      vrb-operators <------ vrb-operator-loader
+            |                       |
+         vrb-core          vrb-operator-plugin-api
         /        \
 vrb-backends   vrb-plugin-api
 ```
 
-Dependencies point downward. `vrb-core` must never depend on framework adapters, model integrations, or concrete operator implementations.
+Dynamic operator libraries depend only on the stable `vrb-operator-plugin-api` C ABI. The loader adapts those libraries into `vrb-operators::Operator` instances and injects them into an operator registry. `vrb-core` does not know that operator plugins exist.
+
+Dependencies point downward. `vrb-core` must never depend on framework adapters, model integrations, operator loaders, operator plugin APIs, or concrete operator implementations.
 
 ## Extension policy
 
@@ -30,6 +32,23 @@ New capabilities should normally be introduced as one of:
 2. a versioned dynamic plugin contract when ABI stability is required;
 3. an adapter crate for an external framework or inference engine;
 4. an operator implementation crate for GEMM, attention, quantization, transforms, or model-specific kernels.
+
+## Operator plugin boundary
+
+Dynamic compute operators use a dedicated ABI rather than extending the v0.1 backend-plugin ABI. This keeps transport/backend evolution independent from compute-kernel evolution.
+
+The operator plugin host must:
+
+- validate ABI version and descriptor size before accepting callbacks;
+- query operator metadata into host-owned structures;
+- use raw integer tags at the C boundary so unknown future values degrade safely;
+- reject duplicate operator IDs and malformed descriptors;
+- serialize callbacks that share plugin state;
+- bound plugin-directed host allocations through an injectable load policy;
+- keep the dynamic library loaded until the optional shutdown callback completes;
+- advertise only capabilities the host adapter actually preserves.
+
+The initial host-byte adapter therefore does not advertise zero-copy. A future shared-resource invocation path must prove actual shared-resource semantics before enabling that capability.
 
 ## Core admission test
 
@@ -49,6 +68,7 @@ If any condition fails, build it above the core.
 - No Rust trait object crosses a DLL/shared-library ABI boundary.
 - Plugin descriptors are size- and version-checked before callbacks are accepted.
 - New optional capabilities must not break older plugins.
+- Backend-plugin and operator-plugin ABIs version independently.
 
 ## Release policy
 
