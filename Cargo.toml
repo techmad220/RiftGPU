@@ -6,6 +6,9 @@ members = [
     "crates/vrb-cli",
     "crates/vrb-test-plugin",
     "crates/vrb-operators",
+    "crates/vrb-operator-plugin-api",
+    "crates/vrb-operator-loader",
+    "crates/vrb-test-operator-plugin",
 ]
 resolver = "2"
 
