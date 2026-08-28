@@ -25,7 +25,9 @@ impl ComputeBackend for FixtureBackend {
 
     fn probe(&self) -> Result<BackendProbe, BackendError> {
         if self.fail_probe {
-            return Err(BackendError::Probe("intentional certification failure".to_owned()));
+            return Err(BackendError::Probe(
+                "intentional certification failure".to_owned(),
+            ));
         }
         Ok(BackendProbe {
             id: self.id.clone(),
@@ -50,7 +52,12 @@ fn caps(zero_copy: bool) -> CapabilitySet {
     }
 }
 
-fn fixture(id: &str, kind: BackendKind, available: bool, zero_copy: bool) -> Arc<dyn ComputeBackend> {
+fn fixture(
+    id: &str,
+    kind: BackendKind,
+    available: bool,
+    zero_copy: bool,
+) -> Arc<dyn ComputeBackend> {
     Arc::new(FixtureBackend {
         id: BackendId::new(id).expect("valid fixture id"),
         kind,
@@ -65,7 +72,10 @@ fn backend_id_trims_rejects_empty_and_displays() {
     let id = BackendId::new("  hip-main  ").expect("trimmed id should be valid");
     assert_eq!(id.as_str(), "hip-main");
     assert_eq!(id.to_string(), "hip-main");
-    assert!(matches!(BackendId::new("   "), Err(RuntimeError::InvalidBackendId)));
+    assert!(matches!(
+        BackendId::new("   "),
+        Err(RuntimeError::InvalidBackendId)
+    ));
 }
 
 #[test]
@@ -102,20 +112,36 @@ fn performance_table_inserts_updates_and_queries_exact_keys() {
     });
 
     assert_eq!(table.records.len(), 1);
-    assert_eq!(table.median_us(&backend, OperationKind::Gemm, DataType::F32), Some(11.0));
-    assert_eq!(table.median_us(&backend, OperationKind::Copy, DataType::F32), None);
+    assert_eq!(
+        table.median_us(&backend, OperationKind::Gemm, DataType::F32),
+        Some(11.0)
+    );
+    assert_eq!(
+        table.median_us(&backend, OperationKind::Copy, DataType::F32),
+        None
+    );
 }
 
 #[test]
 fn fastest_compatible_prefers_measurement_then_kind_and_ignores_bad_measurements() {
-    let hip = fixture("hip", BackendKind::Hip, true, true).probe().unwrap();
-    let vulkan = fixture("vulkan", BackendKind::Vulkan, true, true).probe().unwrap();
-    let cpu = fixture("cpu", BackendKind::Cpu, true, false).probe().unwrap();
+    let hip = fixture("hip", BackendKind::Hip, true, true)
+        .probe()
+        .unwrap();
+    let vulkan = fixture("vulkan", BackendKind::Vulkan, true, true)
+        .probe()
+        .unwrap();
+    let cpu = fixture("cpu", BackendKind::Cpu, true, false)
+        .probe()
+        .unwrap();
     let request = RouteRequest::new(OperationKind::Gemm, DataType::F32);
     let policy = FastestCompatible;
 
     let bootstrap = policy
-        .select(&request, &[cpu.clone(), vulkan.clone(), hip.clone()], &PerformanceTable::default())
+        .select(
+            &request,
+            &[cpu.clone(), vulkan.clone(), hip.clone()],
+            &PerformanceTable::default(),
+        )
         .unwrap();
     assert_eq!(bootstrap.as_str(), "hip");
 
@@ -134,22 +160,35 @@ fn fastest_compatible_prefers_measurement_then_kind_and_ignores_bad_measurements
         median_microseconds: 8.0,
         samples: 4,
     });
-    assert_eq!(policy.select(&request, &[hip, vulkan], &measured).unwrap().as_str(), "vulkan");
+    assert_eq!(
+        policy
+            .select(&request, &[hip, vulkan], &measured)
+            .unwrap()
+            .as_str(),
+        "vulkan"
+    );
 }
 
 #[test]
 fn fastest_compatible_rejects_unavailable_or_incompatible_candidates() {
-    let unavailable = fixture("hip", BackendKind::Hip, false, true).probe().unwrap();
-    let cpu = fixture("cpu", BackendKind::Cpu, true, false).probe().unwrap();
+    let unavailable = fixture("hip", BackendKind::Hip, false, true)
+        .probe()
+        .unwrap();
+    let cpu = fixture("cpu", BackendKind::Cpu, true, false)
+        .probe()
+        .unwrap();
     let request = RouteRequest::new(OperationKind::Gemm, DataType::F32).zero_copy();
-    let result = FastestCompatible.select(&request, &[unavailable, cpu], &PerformanceTable::default());
+    let result =
+        FastestCompatible.select(&request, &[unavailable, cpu], &PerformanceTable::default());
     assert!(matches!(result, Err(RuntimeError::NoCompatibleBackend)));
 }
 
 #[test]
 fn registry_get_probes_and_probe_failure_conversion_are_certified() {
     let mut registry = BackendRegistry::default();
-    registry.register(fixture("cpu", BackendKind::Cpu, true, false)).unwrap();
+    registry
+        .register(fixture("cpu", BackendKind::Cpu, true, false))
+        .unwrap();
     let broken: Arc<dyn ComputeBackend> = Arc::new(FixtureBackend {
         id: BackendId::new("broken").unwrap(),
         kind: BackendKind::Plugin,
@@ -163,10 +202,15 @@ fn registry_get_probes_and_probe_failure_conversion_are_certified() {
     assert!(registry.get(&BackendId::new("missing").unwrap()).is_none());
     let probes = registry.probes();
     assert_eq!(probes.len(), 2);
-    let broken_probe = probes.iter().find(|probe| probe.id.as_str() == "broken").unwrap();
+    let broken_probe = probes
+        .iter()
+        .find(|probe| probe.id.as_str() == "broken")
+        .unwrap();
     assert!(!broken_probe.available);
     assert_eq!(broken_probe.device_count, 0);
-    assert!(broken_probe.detail.contains("intentional certification failure"));
+    assert!(broken_probe
+        .detail
+        .contains("intentional certification failure"));
 }
 
 struct ForceCpu;
@@ -209,7 +253,13 @@ fn runtime_builder_runtime_accessors_custom_policy_and_duplicate_detection_work(
     assert_eq!(runtime.probes().len(), 2);
     assert_eq!(runtime.performance(), &perf);
     assert!(runtime.backend(&BackendId::new("hip").unwrap()).is_some());
-    assert_eq!(runtime.route(&RouteRequest::new(OperationKind::Gemm, DataType::F32)).unwrap().as_str(), "cpu");
+    assert_eq!(
+        runtime
+            .route(&RouteRequest::new(OperationKind::Gemm, DataType::F32))
+            .unwrap()
+            .as_str(),
+        "cpu"
+    );
 
     let duplicate = RuntimeBuilder::new()
         .backend(fixture("same", BackendKind::Cpu, true, false))

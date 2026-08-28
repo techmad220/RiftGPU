@@ -36,13 +36,24 @@ fn amd_vulkan_hip_bridge_full_hardware_e2e() {
     }
 
     let vulkan = VulkanBackend::new();
-    let vulkan_info = vulkan.runtime_info().expect("Vulkan runtime discovery must succeed");
+    let vulkan_info = vulkan
+        .runtime_info()
+        .expect("Vulkan runtime discovery must succeed");
     let preferred = vulkan_info
         .preferred_compute_device()
         .expect("Vulkan must expose a preferred compute device");
-    assert_eq!(preferred.vendor_id, 0x1002, "certification requires an AMD Vulkan device");
-    assert!(preferred.external_memory, "Vulkan external-memory support is required");
-    assert!(preferred.external_semaphore, "Vulkan external-semaphore support is required");
+    assert_eq!(
+        preferred.vendor_id, 0x1002,
+        "certification requires an AMD Vulkan device"
+    );
+    assert!(
+        preferred.external_memory,
+        "Vulkan external-memory support is required"
+    );
+    assert!(
+        preferred.external_semaphore,
+        "Vulkan external-semaphore support is required"
+    );
     let vulkan_probe = vulkan.probe().expect("Vulkan probe must succeed");
     assert!(vulkan_probe.available);
     assert!(vulkan_probe.capabilities.external_memory);
@@ -50,10 +61,21 @@ fn amd_vulkan_hip_bridge_full_hardware_e2e() {
     assert!(vulkan_probe.capabilities.zero_copy);
 
     let hip = HipBackend::new();
-    let hip_info = hip.runtime_info().expect("HIP runtime discovery must succeed");
-    assert!(!hip_info.devices.is_empty(), "HIP must expose at least one device");
-    assert!(hip_info.external_memory_api, "HIP external-memory API is required");
-    assert!(hip_info.external_semaphore_api, "HIP external-semaphore API is required");
+    let hip_info = hip
+        .runtime_info()
+        .expect("HIP runtime discovery must succeed");
+    assert!(
+        !hip_info.devices.is_empty(),
+        "HIP must expose at least one device"
+    );
+    assert!(
+        hip_info.external_memory_api,
+        "HIP external-memory API is required"
+    );
+    assert!(
+        hip_info.external_semaphore_api,
+        "HIP external-semaphore API is required"
+    );
     let hip_probe = hip.probe().expect("HIP probe must succeed");
     assert!(hip_probe.available);
     assert!(hip_probe.capabilities.external_memory);

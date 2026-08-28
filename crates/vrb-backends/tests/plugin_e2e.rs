@@ -25,7 +25,11 @@ fn dynamic_plugin_load_probe_execute_error_and_shutdown_are_end_to_end() {
     let Some(path) = required_plugin_path() else {
         return;
     };
-    assert!(path.is_file(), "fixture plugin does not exist: {}", path.display());
+    assert!(
+        path.is_file(),
+        "fixture plugin does not exist: {}",
+        path.display()
+    );
 
     let marker = std::env::temp_dir().join(format!(
         "vrb-plugin-shutdown-{}-{}.txt",
@@ -45,7 +49,10 @@ fn dynamic_plugin_load_probe_execute_error_and_shutdown_are_end_to_end() {
         assert_eq!(probe.device_count, 1);
         assert_eq!(probe.name, "VRB E2E Fixture");
         assert_eq!(probe.vendor, "Techmad Certification");
-        assert!(probe.capabilities.operations.contains(&OperationKind::Custom));
+        assert!(probe
+            .capabilities
+            .operations
+            .contains(&OperationKind::Custom));
         assert!(probe.capabilities.data_types.contains(&DataType::F32));
         assert!(probe.capabilities.external_memory);
         assert!(probe.capabilities.external_semaphore);
@@ -61,7 +68,9 @@ fn dynamic_plugin_load_probe_execute_error_and_shutdown_are_end_to_end() {
             output_handle: 22,
             opaque: 33,
         };
-        backend.execute_raw(&success).expect("operation 42 must succeed");
+        backend
+            .execute_raw(&success)
+            .expect("operation 42 must succeed");
 
         let unsupported = VrbExecutionRequestV1 {
             operation: 7,
@@ -70,7 +79,10 @@ fn dynamic_plugin_load_probe_execute_error_and_shutdown_are_end_to_end() {
         let error = backend
             .execute_raw(&unsupported)
             .expect_err("operation 7 must propagate Unsupported");
-        assert!(matches!(error, PluginLoadError::PluginStatus(VrbStatus::Unsupported)));
+        assert!(matches!(
+            error,
+            PluginLoadError::PluginStatus(VrbStatus::Unsupported)
+        ));
 
         let invalid = VrbExecutionRequestV1 {
             struct_size: 0,
@@ -80,11 +92,17 @@ fn dynamic_plugin_load_probe_execute_error_and_shutdown_are_end_to_end() {
         let error = backend
             .execute_raw(&invalid)
             .expect_err("undersized request must fail closed");
-        assert!(matches!(error, PluginLoadError::PluginStatus(VrbStatus::InvalidArgument)));
+        assert!(matches!(
+            error,
+            PluginLoadError::PluginStatus(VrbStatus::InvalidArgument)
+        ));
         assert!(!marker.exists(), "shutdown must not run before Drop");
     }
 
-    assert_eq!(std::fs::read(&marker).expect("shutdown marker must exist"), b"shutdown-called\n");
+    assert_eq!(
+        std::fs::read(&marker).expect("shutdown marker must exist"),
+        b"shutdown-called\n"
+    );
     let _ = std::fs::remove_file(&marker);
     std::env::remove_var("VRB_TEST_PLUGIN_SHUTDOWN_MARKER");
 }

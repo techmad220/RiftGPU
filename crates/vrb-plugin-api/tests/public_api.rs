@@ -51,8 +51,14 @@ fn ABI_struct_defaults_and_size_helpers_match_real_layout() {
     assert_eq!(info.device_count, 0);
     assert!(info.name.iter().all(|value| *value == 0));
     assert!(info.vendor.iter().all(|value| *value == 0));
-    assert_eq!(expected_backend_info_struct_size(), size_of::<VrbBackendInfoV1>() as u32);
-    assert_eq!(expected_plugin_struct_size(), size_of::<VrbPluginV1>() as u32);
+    assert_eq!(
+        expected_backend_info_struct_size(),
+        size_of::<VrbBackendInfoV1>() as u32
+    );
+    assert_eq!(
+        expected_plugin_struct_size(),
+        size_of::<VrbPluginV1>() as u32
+    );
 
     let request = VrbExecutionRequestV1::default();
     assert_eq!(request.struct_size, 0);

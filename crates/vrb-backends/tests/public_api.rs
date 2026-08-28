@@ -13,7 +13,10 @@ fn cpu_backend_public_surface_succeeds_and_fails_closed() {
     assert!(probe.available);
     assert_eq!(probe.device_count, 1);
     assert!(probe.capabilities.operations.contains(&OperationKind::Copy));
-    assert!(probe.capabilities.operations.contains(&OperationKind::VectorAdd));
+    assert!(probe
+        .capabilities
+        .operations
+        .contains(&OperationKind::VectorAdd));
     assert!(probe.capabilities.data_types.contains(&DataType::F32));
     assert!(!probe.capabilities.zero_copy);
 
@@ -45,11 +48,16 @@ fn hip_backend_constructor_identity_and_probe_contract_are_stable() {
             assert!(!info.devices.is_empty());
         }
         Err(error) => {
-            assert!(matches!(error, BackendError::Unavailable(_) | BackendError::Probe(_)));
+            assert!(matches!(
+                error,
+                BackendError::Unavailable(_) | BackendError::Probe(_)
+            ));
         }
     }
 
-    let probe = backend.probe().expect("probe converts runtime discovery into a BackendProbe");
+    let probe = backend
+        .probe()
+        .expect("probe converts runtime discovery into a BackendProbe");
     assert_eq!(probe.id.as_str(), "hip");
     if probe.available {
         assert!(probe.device_count > 0);
@@ -81,11 +89,16 @@ fn vulkan_backend_constructor_identity_and_probe_contract_are_stable() {
             }
         }
         Err(error) => {
-            assert!(matches!(error, BackendError::Unavailable(_) | BackendError::Probe(_)));
+            assert!(matches!(
+                error,
+                BackendError::Unavailable(_) | BackendError::Probe(_)
+            ));
         }
     }
 
-    let probe = backend.probe().expect("probe converts Vulkan discovery into a BackendProbe");
+    let probe = backend
+        .probe()
+        .expect("probe converts Vulkan discovery into a BackendProbe");
     assert_eq!(probe.id.as_str(), "vulkan");
     if probe.available {
         assert!(probe.device_count > 0);
