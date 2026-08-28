@@ -1,0 +1,42 @@
+name: Temporary Create AION Cache Public Repo
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create-repo:
+    if: github.event.issue.title == 'run:create-aion-cache-rs-public-20260828'
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Create public repository using host GitHub auth
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
+          Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue
+
+          gh --version
+          gh auth status
+          $login = (gh api user --jq .login).Trim()
+          Write-Host "LOCAL_GH_LOGIN=$login"
+          if ($login -ne 'techmad220') {
+            throw "TECH host gh CLI is authenticated as '$login', expected 'techmad220'."
+          }
+
+          $repo = 'techmad220/aion-cache-rs'
+          gh repo view $repo --json nameWithOwner,visibility,url 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh repo create $repo --public --description 'Rust-native bounded persistent cache extracted from AION: stable namespaced keys, memory/disk tiers, LRU, TTL, pinning, atomic persistence, checksums, corruption recovery, and cache telemetry.'
+            if ($LASTEXITCODE -ne 0) { throw 'gh repo create failed' }
+          }
+
+          gh repo view $repo --json nameWithOwner,visibility,url
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to verify created repository' }
+
+          Write-Host 'AION_CACHE_PUBLIC_REPO_CREATED=PASS'
