@@ -1,4 +1,4 @@
-# Architecture
+# RiftGPU Architecture
 
 ## Non-negotiable boundary
 
