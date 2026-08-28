@@ -1,4 +1,4 @@
-name: Temporary Fix RiftGPU PR9 RAII
+name: Temporary Fix RiftGPU PR9 Windows Clippy
 
 on:
   issues:
@@ -8,10 +8,10 @@ permissions:
   contents: write
 
 jobs:
-  fix-raii:
-    if: github.event.issue.title == 'run:fix-riftgpu-pr9-raii-20260828'
+  fix-windows-clippy:
+    if: github.event.issue.title == 'run:fix-riftgpu-pr9-windows-clippy-20260828'
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,26 +21,45 @@ jobs:
         with:
           toolchain: 1.88.0
           components: rustfmt, clippy
-      - name: Rename retained RAII guard, verify Windows Clippy, and push
+      - name: Apply exact Windows Clippy fixes and push
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $path = 'crates/vrb-hip-shared-gemm-plugin/src/lib.rs'
-          $text = Get-Content -LiteralPath $path -Raw
+
+          $hipPath = 'crates/vrb-hip-shared-gemm-plugin/src/lib.rs'
+          $hip = Get-Content -LiteralPath $hipPath -Raw
           $oldCtor = "            external: external_guard,"
           $newCtor = "            _external: external_guard,"
           $oldField = "    external: ExternalMemoryGuard<'a>,"
           $newField = "    _external: ExternalMemoryGuard<'a>,"
-          if (-not $text.Contains($oldCtor)) { throw 'ImportedRegion constructor marker missing' }
-          if (-not $text.Contains($oldField)) { throw 'ImportedRegion field marker missing' }
-          $text = $text.Replace($oldCtor, $newCtor).Replace($oldField, $newField)
-          Set-Content -LiteralPath $path -Value $text -NoNewline
+          if (-not $hip.Contains($oldCtor)) { throw 'ImportedRegion constructor marker missing' }
+          if (-not $hip.Contains($oldField)) { throw 'ImportedRegion field marker missing' }
+          $hip = $hip.Replace($oldCtor, $newCtor).Replace($oldField, $newField)
+          Set-Content -LiteralPath $hipPath -Value $hip -NoNewline
+
+          $vkPath = 'crates/vrb-vulkan-shared-buffer/src/lib.rs'
+          $vk = Get-Content -LiteralPath $vkPath -Raw
+          $oldMatch = @'
+        let value = match operation_result {
+            Ok(value) => value,
+            Err(error) => return Err(error),
+        };
+'@
+          $newMatch = @'
+        let value = operation_result?;
+'@
+          if (-not $vk.Contains($oldMatch)) { throw 'operation_result match marker missing' }
+          $vk = $vk.Replace($oldMatch, $newMatch)
+          Set-Content -LiteralPath $vkPath -Value $vk -NoNewline
+
           cargo fmt --all
+          if ($LASTEXITCODE -ne 0) { throw 'rustfmt failed' }
           cargo clippy --workspace --all-targets -- -D warnings
-          if ($LASTEXITCODE -ne 0) { throw 'Windows Clippy failed after RAII guard rename' }
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Clippy still fails after exact fixes' }
+
           git config user.name 'techmad220'
           git config user.email '143960678+techmad220@users.noreply.github.com'
-          git add $path
-          git commit -m 'fix: mark retained HIP external-memory guard as intentional'
+          git add $hipPath $vkPath
+          git commit -m 'fix: satisfy Windows Clippy in shared GEMM path'
           git push origin HEAD:feature/hip-shared-gemm-v0.2
-          Write-Host 'RIFTGPU_RAII_FIX=PASS'
+          Write-Host 'RIFTGPU_WINDOWS_CLIPPY_FIX=PASS'
