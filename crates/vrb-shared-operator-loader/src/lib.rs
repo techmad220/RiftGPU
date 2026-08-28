@@ -691,8 +691,10 @@ mod tests {
 
     #[test]
     fn proven_zero_copy_cannot_exist_without_external_resource_support() {
-        let mut info = VrbSharedOperatorInfoV1::default();
-        info.operator_id = 7;
+        let info = VrbSharedOperatorInfoV1 {
+            operator_id: 7,
+            ..VrbSharedOperatorInfoV1::default()
+        };
         let error = validate_capabilities(7, capability::PROVEN_ZERO_COPY, &info)
             .expect_err("invalid capability combination must be rejected");
         assert!(matches!(
