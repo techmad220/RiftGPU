@@ -141,6 +141,7 @@ fn run_shared_case(
     hip_device_index: i32,
     case: Case<'_>,
 ) -> (String, Vec<f32>, u32) {
+    assert!(case.iterations > 0, "hardware case must execute at least once");
     let expected = reference_result(
         case.m, case.n, case.k, case.alpha, case.beta, case.a, case.b, case.c,
     );
@@ -220,18 +221,24 @@ fn run_shared_case(
         let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
         library.register_into(&mut registry);
 
-        let warmup = registry
-            .execute(&request, invocation.clone())
-            .map_err(|error| BackendError::Internal(error.to_string()))?;
-        assert_eq!(warmup.receipt, b"hip-rocblas-shared-gemm-ok");
+        // Only beta=0 cases can be warmed without changing the expected result,
+        // because repeated beta!=0 GEMM would intentionally consume the prior C.
+        if case.beta == 0.0 && case.iterations > 1 {
+            let warmup = registry
+                .execute(&request, invocation.clone())
+                .map_err(|error| BackendError::Internal(error.to_string()))?;
+            assert_eq!(warmup.receipt, b"hip-rocblas-shared-gemm-ok");
+        }
 
         let handles_before = process_handle_count();
         for iteration in 0..case.iterations {
             let output = registry
                 .execute(&request, invocation.clone())
-                .map_err(|error| BackendError::Internal(format!(
-                    "shared GEMM iteration {iteration} failed: {error}"
-                )))?;
+                .map_err(|error| {
+                    BackendError::Internal(format!(
+                        "shared GEMM iteration {iteration} failed: {error}"
+                    ))
+                })?;
             assert_eq!(output.receipt, b"hip-rocblas-shared-gemm-ok");
         }
         let handles_after = process_handle_count();
@@ -256,11 +263,18 @@ fn amd_vulkan_to_hip_rocblas_shared_gemm_matches_cpu_oracle() {
     let path = std::env::var_os("VRB_HIP_SHARED_GEMM_PLUGIN_PATH")
         .map(PathBuf::from)
         .expect("VRB_HIP_SHARED_GEMM_PLUGIN_PATH is required for hardware certification");
-    assert!(path.is_file(), "HIP shared GEMM plugin is missing: {}", path.display());
+    assert!(
+        path.is_file(),
+        "HIP shared GEMM plugin is missing: {}",
+        path.display()
+    );
     let library = LoadedSharedOperatorLibrary::load(&path)
         .expect("HIP shared GEMM plugin must load");
     let capabilities = library.operators()[0].capabilities();
-    assert!(!capabilities.proven_zero_copy, "phase-one build must not pre-claim proof");
+    assert!(
+        !capabilities.proven_zero_copy,
+        "phase-one build must not pre-claim proof"
+    );
 
     let (hip_device_index, hip_device_name) = correlated_hip_device_index();
     let a = [1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -282,7 +296,10 @@ fn amd_vulkan_to_hip_rocblas_shared_gemm_matches_cpu_oracle() {
         },
     );
     assert_eq!(product, [58.0, 64.0, 139.0, 154.0]);
-    assert_eq!(normalize_device_name(&vulkan_device), normalize_device_name(&hip_device_name));
+    assert_eq!(
+        normalize_device_name(&vulkan_device),
+        normalize_device_name(&hip_device_name)
+    );
     assert!(
         handle_growth <= MAX_HANDLE_GROWTH,
         "process handles grew by {handle_growth} across {STRESS_ITERATIONS} shared GEMM iterations"
