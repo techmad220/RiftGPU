@@ -1,0 +1,20 @@
+[package]
+name = "vrb-gemm-reference-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vrb-gemm-reference = { version = "0.1.0", path = "../vrb-gemm-reference" }
+vrb-operator-plugin-api = { version = "0.1.0", path = "../vrb-operator-plugin-api" }
+
+[dev-dependencies]
+vrb-core = { version = "0.1.0", path = "../vrb-core" }
+vrb-gemm-protocol = { version = "0.1.0", path = "../vrb-gemm-protocol" }
+vrb-operator-loader = { version = "0.1.0", path = "../vrb-operator-loader" }
+vrb-operators = { version = "0.1.0", path = "../vrb-operators" }
