@@ -208,7 +208,7 @@ impl HipApi {
         }
         Ok(ImportedRegion {
             mapped: MappedBufferGuard { api: self, pointer },
-            external: external_guard,
+            _external: external_guard,
         })
     }
 }
@@ -279,7 +279,7 @@ impl Drop for MappedBufferGuard<'_> {
 struct ImportedRegion<'a> {
     // Drop mapped pointer before imported external-memory object.
     mapped: MappedBufferGuard<'a>,
-    external: ExternalMemoryGuard<'a>,
+    _external: ExternalMemoryGuard<'a>,
 }
 
 #[cfg(target_os = "windows")]
