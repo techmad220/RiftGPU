@@ -183,7 +183,7 @@ fn candidate_libraries() -> Vec<PathBuf> {
     {
         for variable in ["HIP_PATH", "ROCM_PATH"] {
             if let Some(root) = env::var_os(variable) {
-                candidates.push(PathBuf::from(root).join("bin").join("amdhip64.dll"));
+                candidates.push(PathBuf::from(&root).join("bin").join("amdhip64.dll"));
             }
         }
         candidates.push(PathBuf::from("amdhip64.dll"));
@@ -193,8 +193,8 @@ fn candidate_libraries() -> Vec<PathBuf> {
     {
         for variable in ["HIP_PATH", "ROCM_PATH"] {
             if let Some(root) = env::var_os(variable) {
-                candidates.push(PathBuf::from(root).join("lib").join("libamdhip64.so"));
-                candidates.push(PathBuf::from(root).join("lib64").join("libamdhip64.so"));
+                candidates.push(PathBuf::from(&root).join("lib").join("libamdhip64.so"));
+                candidates.push(PathBuf::from(&root).join("lib64").join("libamdhip64.so"));
             }
         }
         candidates.push(PathBuf::from("/opt/rocm/lib/libamdhip64.so"));
