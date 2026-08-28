@@ -9,6 +9,9 @@ members = [
     "crates/vrb-operator-plugin-api",
     "crates/vrb-operator-loader",
     "crates/vrb-test-operator-plugin",
+    "crates/vrb-gemm-protocol",
+    "crates/vrb-gemm-reference",
+    "crates/vrb-gemm-reference-plugin",
 ]
 resolver = "2"
 
