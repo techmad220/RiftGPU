@@ -14,8 +14,8 @@ use vrb_operator_plugin_api::{
     VRB_OPERATOR_PLUGIN_ABI_VERSION, VRB_OPERATOR_PLUGIN_ENTRY_SYMBOL,
 };
 use vrb_operators::{
-    Operator, OperatorCapabilities, OperatorError, OperatorInvocation, OperatorKind, OperatorOutput,
-    OperatorRegistry,
+    Operator, OperatorCapabilities, OperatorError, OperatorInvocation, OperatorKind,
+    OperatorOutput, OperatorRegistry,
 };
 
 const DEFAULT_MAX_OPERATORS: u32 = 4096;
@@ -50,7 +50,9 @@ pub enum OperatorPluginLoadError {
     NullDescriptor,
     #[error("operator plugin ABI version {actual} is incompatible with host ABI {expected}")]
     AbiVersion { actual: u32, expected: u32 },
-    #[error("operator plugin descriptor is too small: {actual} bytes, expected at least {expected}")]
+    #[error(
+        "operator plugin descriptor is too small: {actual} bytes, expected at least {expected}"
+    )]
     DescriptorTooSmall { actual: u32, expected: u32 },
     #[error("operator plugin name is empty")]
     EmptyPluginName,
@@ -66,7 +68,9 @@ pub enum OperatorPluginLoadError {
     MissingExecute,
     #[error("operator query {index} returned status {status}")]
     QueryStatus { index: u32, status: i32 },
-    #[error("operator descriptor {index} is too small: {actual} bytes, expected at least {expected}")]
+    #[error(
+        "operator descriptor {index} is too small: {actual} bytes, expected at least {expected}"
+    )]
     OperatorDescriptorTooSmall {
         index: u32,
         actual: u32,
@@ -205,9 +209,8 @@ impl DynamicOperator {
         // SAFETY: callback and user_data came from a validated plugin descriptor.
         // The request and all buffers it references remain valid for the call,
         // and plugin callbacks are serialized through the mutex.
-        let execute_status = unsafe {
-            (callbacks.execute)(callbacks.user_data as *mut _, &request as *const _)
-        };
+        let execute_status =
+            unsafe { (callbacks.execute)(callbacks.user_data as *mut _, &request as *const _) };
         if execute_status != status::OK {
             return Err(OperatorPluginExecutionError::PluginStatus(execute_status));
         }
@@ -291,12 +294,11 @@ impl LoadedOperatorLibrary {
         let path = path.as_ref().to_path_buf();
         // SAFETY: dynamic loading inherently executes platform loader behavior.
         // The fixed entry point is the only symbol called before ABI validation.
-        let library = unsafe { Library::new(&path) }.map_err(|source| {
-            OperatorPluginLoadError::Load {
+        let library =
+            unsafe { Library::new(&path) }.map_err(|source| OperatorPluginLoadError::Load {
                 path: path.clone(),
                 source,
-            }
-        })?;
+            })?;
 
         // SAFETY: the symbol type is the documented fixed C ABI entry point.
         let descriptor = unsafe {
@@ -356,9 +358,8 @@ impl LoadedOperatorLibrary {
             let mut info = VrbOperatorInfoV1::default();
             // SAFETY: query_operator came from the validated descriptor. The host
             // provides a writable, correctly sized VrbOperatorInfoV1.
-            let query_status = unsafe {
-                query_operator(user_data as *mut _, index, &mut info as *mut _)
-            };
+            let query_status =
+                unsafe { query_operator(user_data as *mut _, index, &mut info as *mut _) };
             if query_status != status::OK {
                 return Err(OperatorPluginLoadError::QueryStatus {
                     index,
@@ -378,7 +379,9 @@ impl LoadedOperatorLibrary {
                 return Err(OperatorPluginLoadError::EmptyOperatorName { index });
             }
             if !ids.insert(info.operator_id) {
-                return Err(OperatorPluginLoadError::DuplicateOperatorId(info.operator_id));
+                return Err(OperatorPluginLoadError::DuplicateOperatorId(
+                    info.operator_id,
+                ));
             }
 
             discovered.push((
@@ -435,7 +438,7 @@ impl LoadedOperatorLibrary {
 
     pub fn register_into(&self, registry: &mut OperatorRegistry) {
         for operator in &self.operators {
-            let injected: Arc<dyn Operator> = Arc::clone(operator) as Arc<dyn Operator>;
+            let injected: Arc<dyn Operator> = operator.clone();
             registry.register(injected);
         }
     }
