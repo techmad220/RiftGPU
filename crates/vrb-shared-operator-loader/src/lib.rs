@@ -18,8 +18,8 @@ use vrb_shared_operator_plugin_api::{
 };
 use vrb_shared_operators::{
     ExternalMemoryHandleKind, ExternalSyncHandleKind, ResourceAccess, SharedOperator,
-    SharedOperatorCapabilities, SharedOperatorError, SharedOperatorInvocation, SharedOperatorOutput,
-    SharedOperatorRegistry, SharedResourceRegion, SharedSyncPoint,
+    SharedOperatorCapabilities, SharedOperatorError, SharedOperatorInvocation,
+    SharedOperatorOutput, SharedOperatorRegistry, SharedResourceRegion, SharedSyncPoint,
 };
 
 const DEFAULT_MAX_OPERATORS: u32 = 4096;
@@ -63,7 +63,9 @@ pub enum SharedOperatorLoadError {
     NullDescriptor,
     #[error("shared-operator ABI version {actual} is incompatible with host ABI {expected}")]
     AbiVersion { actual: u32, expected: u32 },
-    #[error("shared-operator descriptor is too small: {actual} bytes, expected at least {expected}")]
+    #[error(
+        "shared-operator descriptor is too small: {actual} bytes, expected at least {expected}"
+    )]
     DescriptorTooSmall { actual: u32, expected: u32 },
     #[error("shared-operator plugin name is empty")]
     EmptyPluginName,
@@ -99,7 +101,9 @@ pub enum SharedOperatorExecutionError {
     MetadataTooLarge { actual: u64, maximum: u64 },
     #[error("shared invocation has {actual} resources, exceeding host limit {maximum}")]
     TooManyResources { actual: u32, maximum: u32 },
-    #[error("shared invocation has {actual} synchronization points, exceeding host limit {maximum}")]
+    #[error(
+        "shared invocation has {actual} synchronization points, exceeding host limit {maximum}"
+    )]
     TooManySyncPoints { actual: u32, maximum: u32 },
     #[error("shared invocation length cannot be represented by the ABI")]
     LengthUnsupported,
@@ -275,9 +279,7 @@ impl DynamicSharedOperator {
         let execute_status =
             unsafe { (callbacks.execute)(callbacks.user_data as *mut _, &request as *const _) };
         if execute_status != status::OK {
-            if execute_status == status::BUFFER_TOO_SMALL
-                && receipt_len > policy.max_receipt_bytes
-            {
+            if execute_status == status::BUFFER_TOO_SMALL && receipt_len > policy.max_receipt_bytes {
                 return Err(SharedOperatorExecutionError::ReceiptTooLarge {
                     actual: receipt_len,
                     capacity: policy.max_receipt_bytes,
@@ -344,12 +346,11 @@ impl LoadedSharedOperatorLibrary {
         let path = path.as_ref().to_path_buf();
         // SAFETY: dynamic loading invokes the platform loader. Only the fixed
         // entry symbol is called before the descriptor is validated.
-        let library = unsafe { Library::new(&path) }.map_err(|source| {
-            SharedOperatorLoadError::Load {
+        let library =
+            unsafe { Library::new(&path) }.map_err(|source| SharedOperatorLoadError::Load {
                 path: path.clone(),
                 source,
-            }
-        })?;
+            })?;
 
         // SAFETY: symbol type is the documented fixed C ABI entry point.
         let descriptor = unsafe {
@@ -401,7 +402,9 @@ impl LoadedSharedOperatorLibrary {
                 return Err(SharedOperatorLoadError::EmptyOperatorName { index });
             }
             if !ids.insert(info.operator_id) {
-                return Err(SharedOperatorLoadError::DuplicateOperatorId(info.operator_id));
+                return Err(SharedOperatorLoadError::DuplicateOperatorId(
+                    info.operator_id,
+                ));
             }
 
             let raw_capability_bits = info.capability_bits | plugin_capability_bits;
@@ -553,10 +556,22 @@ fn map_backend_kind(kind: u32) -> BackendKind {
 
 fn map_memory_kinds(bits: u64) -> Vec<ExternalMemoryHandleKind> {
     let candidates = [
-        (memory_handle_kind::WIN32_KMT, ExternalMemoryHandleKind::Win32Kmt),
-        (memory_handle_kind::WIN32_NT, ExternalMemoryHandleKind::Win32Nt),
-        (memory_handle_kind::OPAQUE_FD, ExternalMemoryHandleKind::OpaqueFd),
-        (memory_handle_kind::DMA_BUF, ExternalMemoryHandleKind::DmaBuf),
+        (
+            memory_handle_kind::WIN32_KMT,
+            ExternalMemoryHandleKind::Win32Kmt,
+        ),
+        (
+            memory_handle_kind::WIN32_NT,
+            ExternalMemoryHandleKind::Win32Nt,
+        ),
+        (
+            memory_handle_kind::OPAQUE_FD,
+            ExternalMemoryHandleKind::OpaqueFd,
+        ),
+        (
+            memory_handle_kind::DMA_BUF,
+            ExternalMemoryHandleKind::DmaBuf,
+        ),
     ];
     candidates
         .into_iter()
