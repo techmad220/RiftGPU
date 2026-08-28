@@ -1,29 +1,41 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+#[cfg(target_os = "windows")]
 use libloading::Library;
+#[cfg(target_os = "windows")]
 use std::env;
 use std::ffi::{c_char, c_void};
+#[cfg(target_os = "windows")]
 use std::path::PathBuf;
 use std::ptr;
+#[cfg(target_os = "windows")]
 use vrb_gemm_shared_protocol::{
     decode_control, expected_resource_lengths, A_RESOURCE_INDEX, B_RESOURCE_INDEX,
     C_RESOURCE_INDEX, SHARED_GEMM_RESOURCE_COUNT,
 };
 use vrb_shared_operator_plugin_api::{
-    backend_kind, capability, expected_execution_request_struct_size,
-    expected_resource_region_struct_size, memory_handle_kind, operator_kind, resource_access,
-    status, VrbSharedOperatorExecutionRequestV1, VrbSharedOperatorInfoV1,
-    VrbSharedOperatorPluginV1, VrbSharedResourceRegionV1, VRB_SHARED_OPERATOR_PLUGIN_ABI_VERSION,
+    backend_kind, capability, expected_execution_request_struct_size, memory_handle_kind,
+    operator_kind, status, VrbSharedOperatorExecutionRequestV1, VrbSharedOperatorInfoV1,
+    VrbSharedOperatorPluginV1, VRB_SHARED_OPERATOR_PLUGIN_ABI_VERSION,
     VRB_SHARED_OPERATOR_PLUGIN_NAME_CAPACITY,
+};
+#[cfg(target_os = "windows")]
+use vrb_shared_operator_plugin_api::{
+    expected_resource_region_struct_size, resource_access, VrbSharedResourceRegionV1,
 };
 
 const OPERATOR_ID: u32 = 1;
 const PLUGIN_NAME: &[u8] = b"vrb-hip-shared-gemm";
 const OPERATOR_NAME: &[u8] = b"hip-rocblas-shared-fp32-gemm";
+#[cfg(target_os = "windows")]
 const SUCCESS_RECEIPT: &[u8] = b"hip-rocblas-shared-gemm-ok";
+#[cfg(target_os = "windows")]
 const HIP_SUCCESS: i32 = 0;
+#[cfg(target_os = "windows")]
 const ROCBLAS_STATUS_SUCCESS: i32 = 0;
+#[cfg(target_os = "windows")]
 const ROCBLAS_OPERATION_NONE: i32 = 111;
+#[cfg(target_os = "windows")]
 const HIP_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT: i32 = 3;
 
 #[cfg(target_os = "windows")]
@@ -353,11 +365,13 @@ unsafe extern "C" fn execute(
     #[cfg(not(target_os = "windows"))]
     {
         let _ = request;
-        return status::UNSUPPORTED;
+        status::UNSUPPORTED
     }
 
     #[cfg(target_os = "windows")]
-    execute_windows(request)
+    {
+        execute_windows(request)
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -484,6 +498,7 @@ fn execute_windows(request: &VrbSharedOperatorExecutionRequestV1) -> i32 {
     write_receipt(request, SUCCESS_RECEIPT)
 }
 
+#[cfg(target_os = "windows")]
 fn validate_region(region: &VrbSharedResourceRegionV1, access: u32, expected_bytes: u64) -> bool {
     if region.struct_size < expected_resource_region_struct_size()
         || region.handle_kind != memory_handle_kind::WIN32_KMT
@@ -500,6 +515,7 @@ fn validate_region(region: &VrbSharedResourceRegionV1, access: u32, expected_byt
         .is_some_and(|end| end <= region.allocation_size)
 }
 
+#[cfg(target_os = "windows")]
 fn write_receipt(request: &VrbSharedOperatorExecutionRequestV1, receipt: &[u8]) -> i32 {
     let required = receipt.len() as u64;
     // SAFETY: execute validated receipt_len as non-null.
