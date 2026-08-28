@@ -10,8 +10,7 @@
 use std::ffi::{c_char, c_void};
 
 pub const VRB_SHARED_OPERATOR_PLUGIN_ABI_VERSION: u32 = 1;
-pub const VRB_SHARED_OPERATOR_PLUGIN_ENTRY_SYMBOL: &[u8] =
-    b"vrb_shared_operator_plugin_entry_v1\0";
+pub const VRB_SHARED_OPERATOR_PLUGIN_ENTRY_SYMBOL: &[u8] = b"vrb_shared_operator_plugin_entry_v1\0";
 pub const VRB_SHARED_OPERATOR_NAME_CAPACITY: usize = 128;
 pub const VRB_SHARED_OPERATOR_PLUGIN_NAME_CAPACITY: usize = 128;
 
