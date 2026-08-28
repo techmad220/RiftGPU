@@ -104,7 +104,7 @@ See [`LEGAL_PROVENANCE.md`](LEGAL_PROVENANCE.md) for the clean-room rules and so
 
 ## Build
 
-Minimum supported Rust version: **1.82**.
+Minimum supported Rust version: **1.88**.
 
 ```console
 cargo build --workspace --release
