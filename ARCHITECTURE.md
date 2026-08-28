@@ -1,5 +1,7 @@
 # RiftGPU Architecture
 
+RiftGPU keeps transport, compute, plugin, and hardware-resource responsibilities independently replaceable so new execution paths can be added without turning the runtime into a monolith.
+
 ## Non-negotiable boundary
 
 `vrb-core` is infrastructure. It owns backend discovery, capability/routing policy, performance records, and dependency-injection seams.
