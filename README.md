@@ -16,7 +16,7 @@ Application / inference engine
     capability scheduler
        /           \
   Vulkan           HIP/ROCm
-       \\           /
+       \           /
       shared GPU resources
              |
            AMD GPU
@@ -26,7 +26,7 @@ Application / inference engine
 
 `vrb-core` remains a small infrastructure layer. New compute features are built **on top** through dependency-injected services, versioned plugin contracts, operator crates, and integrations. Model-specific kernels, inference-engine bindings, schedulers, telemetry, cache policy, and framework adapters do not belong in the transport core.
 
-That rule is deliberate: keep the bridge replaceable, testable, and stable while higher-level capabilities evolve independently.
+That rule is deliberate: keep the bridge replaceable, testable, and stable while higher-level capabilities evolve independently. See [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Current v0.1 architecture
 
