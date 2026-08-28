@@ -10,4 +10,4 @@ description = "Core capability, scheduling, and dependency-injection abstraction
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
-vrb-plugin-api = { path = "../vrb-plugin-api" }
+vrb-plugin-api = { version = "0.1.0", path = "../vrb-plugin-api" }
