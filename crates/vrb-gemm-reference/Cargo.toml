@@ -1,0 +1,12 @@
+[package]
+name = "vrb-gemm-reference"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+vrb-core = { version = "0.1.0", path = "../vrb-core" }
+vrb-gemm-protocol = { version = "0.1.0", path = "../vrb-gemm-protocol" }
+vrb-operators = { version = "0.1.0", path = "../vrb-operators" }
