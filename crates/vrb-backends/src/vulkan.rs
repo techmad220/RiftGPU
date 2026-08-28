@@ -8,7 +8,7 @@ use vrb_core::{
 
 const AMD_PCI_VENDOR_ID: u32 = 0x1002;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VulkanDeviceInfo {
     pub name: String,
     pub vendor_id: u32,
@@ -43,7 +43,7 @@ impl VulkanDeviceInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VulkanRuntimeInfo {
     pub loader_available: bool,
     pub devices: Vec<VulkanDeviceInfo>,
@@ -184,8 +184,11 @@ impl ComputeBackend for VulkanBackend {
             .iter()
             .map(|device| {
                 format!(
-                    "{}[vendor=0x{:04x},device=0x{:04x},type={:?}]",
-                    device.name, device.vendor_id, device.device_id, device.device_type
+                    "{}[vendor=0x{:04x},device=0x{:04x},type={}]",
+                    device.name,
+                    device.vendor_id,
+                    device.device_id,
+                    physical_device_type_name(device.device_type)
                 )
             })
             .collect::<Vec<_>>()
@@ -205,9 +208,9 @@ impl ComputeBackend for VulkanBackend {
             detail: preferred
                 .map(|device| {
                     format!(
-                        "selected_device_id=0x{:04x}, selected_type={:?}, api_version={}, external_memory={}, external_semaphore={}; inventory={inventory}",
+                        "selected_device_id=0x{:04x}, selected_type={}, api_version={}, external_memory={}, external_semaphore={}; inventory={inventory}",
                         device.device_id,
-                        device.device_type,
+                        physical_device_type_name(device.device_type),
                         device.api_version,
                         device.external_memory,
                         device.external_semaphore
@@ -224,6 +227,20 @@ impl ComputeBackend for VulkanBackend {
                 zero_copy: external_memory && external_semaphore,
             },
         })
+    }
+}
+
+fn physical_device_type_name(value: vk::PhysicalDeviceType) -> &'static str {
+    if value == vk::PhysicalDeviceType::DISCRETE_GPU {
+        "discrete_gpu"
+    } else if value == vk::PhysicalDeviceType::INTEGRATED_GPU {
+        "integrated_gpu"
+    } else if value == vk::PhysicalDeviceType::VIRTUAL_GPU {
+        "virtual_gpu"
+    } else if value == vk::PhysicalDeviceType::CPU {
+        "cpu"
+    } else {
+        "other"
     }
 }
 

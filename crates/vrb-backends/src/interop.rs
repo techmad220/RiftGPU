@@ -31,8 +31,7 @@ mod windows {
     use libloading::Library;
     use std::env;
     use std::ffi::{c_char, c_void, CStr, CString};
-    use std::mem::MaybeUninit;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::ptr;
     use std::slice;
     use vrb_core::BackendError;
@@ -95,7 +94,7 @@ mod windows {
 
     struct HipRuntime {
         _library: Library,
-        library_path: String,
+
         get_device_count: HipGetDeviceCount,
         device_get_name: HipDeviceGetName,
         set_device: HipSetDevice,
@@ -109,7 +108,7 @@ mod windows {
 
     impl HipRuntime {
         fn load() -> Result<Self, BackendError> {
-            let (library, library_path) = load_hip_library()?;
+            let (library, _library_path) = load_hip_library()?;
 
             // SAFETY: all symbols are resolved from the loaded HIP runtime using
             // the public HIP C API names. Function pointers are copied while the
@@ -144,7 +143,7 @@ mod windows {
 
                 let runtime = Self {
                     _library: library,
-                    library_path,
+
                     get_device_count,
                     device_get_name,
                     set_device,
@@ -174,7 +173,11 @@ mod windows {
                     if pointer.is_null() {
                         None
                     } else {
-                        Some(unsafe { CStr::from_ptr(pointer) }.to_string_lossy().into_owned())
+                        Some(
+                            unsafe { CStr::from_ptr(pointer) }
+                                .to_string_lossy()
+                                .into_owned(),
+                        )
                     }
                 })
                 .unwrap_or_else(|| "unknown HIP error".to_owned());
@@ -187,7 +190,10 @@ mod windows {
         fn devices(&self) -> Result<Vec<String>, BackendError> {
             let mut count = 0_i32;
             // SAFETY: pointer targets a valid initialized i32.
-            self.check(unsafe { (self.get_device_count)(&mut count) }, "hipGetDeviceCount")?;
+            self.check(
+                unsafe { (self.get_device_count)(&mut count) },
+                "hipGetDeviceCount",
+            )?;
             if count < 0 {
                 return Err(BackendError::Probe(
                     "HIP returned a negative device count".to_owned(),
@@ -403,17 +409,17 @@ mod windows {
                 .queue_create_infos(&queue_infos)
                 .enabled_extension_names(&extension_names);
             // SAFETY: physical_device and create arrays are valid for this call.
-            let device = match unsafe { instance.create_device(physical_device, &device_info, None) }
-            {
-                Ok(device) => device,
-                Err(error) => {
-                    // SAFETY: no device children exist.
-                    unsafe { instance.destroy_instance(None) };
-                    return Err(BackendError::Probe(format!(
-                        "vkCreateDevice for '{device_name}': {error:?}"
-                    )));
-                }
-            };
+            let device =
+                match unsafe { instance.create_device(physical_device, &device_info, None) } {
+                    Ok(device) => device,
+                    Err(error) => {
+                        // SAFETY: no device children exist.
+                        unsafe { instance.destroy_instance(None) };
+                        return Err(BackendError::Probe(format!(
+                            "vkCreateDevice for '{device_name}': {error:?}"
+                        )));
+                    }
+                };
 
             // SAFETY: queue family was selected from this physical device and one
             // queue was requested from that family.
@@ -452,8 +458,8 @@ mod windows {
 
         fn create_shared_buffer(&self, bytes: u64) -> Result<VulkanBuffer, BackendError> {
             let handle_type = vk::ExternalMemoryHandleTypeFlags::OPAQUE_WIN32_KMT;
-            let mut external = vk::ExternalMemoryBufferCreateInfo::default()
-                .handle_types(handle_type);
+            let mut external =
+                vk::ExternalMemoryBufferCreateInfo::default().handle_types(handle_type);
             let buffer_info = vk::BufferCreateInfo::default()
                 .size(bytes)
                 .usage(shared_buffer_usage())
@@ -465,8 +471,10 @@ mod windows {
 
             // SAFETY: buffer belongs to this device.
             let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
-            let memory_properties =
-                unsafe { self.instance.get_physical_device_memory_properties(self.physical_device) };
+            let memory_properties = unsafe {
+                self.instance
+                    .get_physical_device_memory_properties(self.physical_device)
+            };
             let memory_type_index = find_memory_type(
                 &memory_properties,
                 requirements.memory_type_bits,
@@ -525,25 +533,27 @@ mod windows {
                 .usage(vk::BufferUsageFlags::TRANSFER_DST)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
             // SAFETY: create data is valid.
-            let buffer = unsafe { self.device.create_buffer(&info, None) }
-                .map_err(|error| BackendError::Internal(format!("staging vkCreateBuffer: {error:?}")))?;
+            let buffer = unsafe { self.device.create_buffer(&info, None) }.map_err(|error| {
+                BackendError::Internal(format!("staging vkCreateBuffer: {error:?}"))
+            })?;
             // SAFETY: buffer belongs to this device.
             let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
-            let memory_properties =
-                unsafe { self.instance.get_physical_device_memory_properties(self.physical_device) };
-            let required = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
-            let memory_type_index = find_memory_type(
-                &memory_properties,
-                requirements.memory_type_bits,
-                required,
-            )
-            .ok_or_else(|| {
-                // SAFETY: buffer is live and unbound.
-                unsafe { self.device.destroy_buffer(buffer, None) };
-                BackendError::Unsupported(
-                    "no HOST_VISIBLE|HOST_COHERENT staging memory type is available".to_owned(),
-                )
-            })?;
+            let memory_properties = unsafe {
+                self.instance
+                    .get_physical_device_memory_properties(self.physical_device)
+            };
+            let required =
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
+            let memory_type_index =
+                find_memory_type(&memory_properties, requirements.memory_type_bits, required)
+                    .ok_or_else(|| {
+                        // SAFETY: buffer is live and unbound.
+                        unsafe { self.device.destroy_buffer(buffer, None) };
+                        BackendError::Unsupported(
+                            "no HOST_VISIBLE|HOST_COHERENT staging memory type is available"
+                                .to_owned(),
+                        )
+                    })?;
             let allocate_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(requirements.size)
                 .memory_type_index(memory_type_index);
@@ -584,8 +594,9 @@ mod windows {
                 .memory(shared.memory)
                 .handle_type(vk::ExternalMemoryHandleTypeFlags::OPAQUE_WIN32_KMT);
             // SAFETY: shared.memory was allocated with the matching export handle type.
-            unsafe { self.external_memory_win32.get_memory_win32_handle(&info) }
-                .map_err(|error| BackendError::Internal(format!("vkGetMemoryWin32HandleKHR: {error:?}")))
+            unsafe { self.external_memory_win32.get_memory_win32_handle(&info) }.map_err(|error| {
+                BackendError::Internal(format!("vkGetMemoryWin32HandleKHR: {error:?}"))
+            })
         }
 
         fn release_to_external(&self, shared: &VulkanBuffer) -> Result<(), BackendError> {
@@ -694,14 +705,16 @@ mod windows {
             let bytes = unsafe {
                 slice::from_raw_parts(pointer.cast::<u8>(), staging.logical_size as usize)
             };
-            let mismatch = bytes.iter().position(|value| *value != pattern);
+            let mismatch = bytes
+                .iter()
+                .position(|value| *value != pattern)
+                .map(|index| (index, bytes[index]));
             // SAFETY: pointer belongs to this memory mapping and is unmapped once.
             unsafe { self.device.unmap_memory(staging.memory) };
 
-            if let Some(index) = mismatch {
+            if let Some((index, actual)) = mismatch {
                 return Err(BackendError::Internal(format!(
-                    "zero-copy verification failed at byte {index}: expected 0x{pattern:02x}, got 0x{:02x}",
-                    bytes[index]
+                    "zero-copy verification failed at byte {index}: expected 0x{pattern:02x}, got 0x{actual:02x}"
                 )));
             }
             Ok(staging.logical_size)
@@ -717,27 +730,35 @@ mod windows {
                 .command_buffer_count(1);
             // SAFETY: command pool is valid and belongs to this device.
             let command_buffers = unsafe { self.device.allocate_command_buffers(&allocate_info) }
-                .map_err(|error| BackendError::Internal(format!("vkAllocateCommandBuffers: {error:?}")))?;
+                .map_err(|error| {
+                BackendError::Internal(format!("vkAllocateCommandBuffers: {error:?}"))
+            })?;
             let command_buffer = command_buffers[0];
             let result = (|| {
                 let begin = vk::CommandBufferBeginInfo::default()
                     .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
                 // SAFETY: command buffer is freshly allocated and not recording.
-                unsafe { self.device.begin_command_buffer(command_buffer, &begin) }
-                    .map_err(|error| BackendError::Internal(format!("vkBeginCommandBuffer: {error:?}")))?;
+                unsafe { self.device.begin_command_buffer(command_buffer, &begin) }.map_err(
+                    |error| BackendError::Internal(format!("vkBeginCommandBuffer: {error:?}")),
+                )?;
                 record(command_buffer);
                 // SAFETY: recorded commands are complete.
-                unsafe { self.device.end_command_buffer(command_buffer) }
-                    .map_err(|error| BackendError::Internal(format!("vkEndCommandBuffer: {error:?}")))?;
+                unsafe { self.device.end_command_buffer(command_buffer) }.map_err(|error| {
+                    BackendError::Internal(format!("vkEndCommandBuffer: {error:?}"))
+                })?;
                 let command_buffer_list = [command_buffer];
                 let submit = [vk::SubmitInfo::default().command_buffers(&command_buffer_list)];
                 // SAFETY: queue and command buffer belong to this device. No fence
                 // is needed because we synchronously wait for the queue immediately.
-                unsafe { self.device.queue_submit(self.queue, &submit, vk::Fence::null()) }
-                    .map_err(|error| BackendError::Internal(format!("vkQueueSubmit: {error:?}")))?;
+                unsafe {
+                    self.device
+                        .queue_submit(self.queue, &submit, vk::Fence::null())
+                }
+                .map_err(|error| BackendError::Internal(format!("vkQueueSubmit: {error:?}")))?;
                 // SAFETY: queue is valid; wait establishes host synchronization.
-                unsafe { self.device.queue_wait_idle(self.queue) }
-                    .map_err(|error| BackendError::Internal(format!("vkQueueWaitIdle: {error:?}")))?;
+                unsafe { self.device.queue_wait_idle(self.queue) }.map_err(|error| {
+                    BackendError::Internal(format!("vkQueueWaitIdle: {error:?}"))
+                })?;
                 Ok(())
             })();
 
@@ -822,7 +843,10 @@ mod windows {
             "hipMemset(shared Vulkan memory)",
         )?;
         // SAFETY: runtime is initialized and selected device is current.
-        hip.check(unsafe { (hip.device_synchronize)() }, "hipDeviceSynchronize")?;
+        hip.check(
+            unsafe { (hip.device_synchronize)() },
+            "hipDeviceSynchronize",
+        )?;
         drop(external_memory_guard);
 
         vulkan.acquire_and_copy_to_staging(&shared, &staging)?;
@@ -834,12 +858,16 @@ mod windows {
             bytes,
             pattern,
             verified_bytes,
-            external_memory_handle: "VK_OPAQUE_WIN32_KMT / hipExternalMemoryHandleTypeOpaqueWin32Kmt",
-            synchronization: "Vulkan EXTERNAL queue-family ownership + host queue/HIP synchronization",
+            external_memory_handle:
+                "VK_OPAQUE_WIN32_KMT / hipExternalMemoryHandleTypeOpaqueWin32Kmt",
+            synchronization:
+                "Vulkan EXTERNAL queue-family ownership + host queue/HIP synchronization",
         })
     }
 
-    fn select_vulkan_device(instance: &Instance) -> Result<(vk::PhysicalDevice, u32, String), BackendError> {
+    fn select_vulkan_device(
+        instance: &Instance,
+    ) -> Result<(vk::PhysicalDevice, u32, String), BackendError> {
         // SAFETY: instance is valid.
         let physical_devices = unsafe { instance.enumerate_physical_devices() }
             .map_err(|error| BackendError::Probe(format!("enumerate Vulkan devices: {error:?}")))?;
@@ -855,21 +883,22 @@ mod windows {
             // SAFETY: handle came from this instance.
             let queue_families =
                 unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
-            let Some((queue_family_index, _)) = queue_families
-                .iter()
-                .enumerate()
-                .find(|(_, family)| {
+            let Some((queue_family_index, _)) =
+                queue_families.iter().enumerate().find(|(_, family)| {
                     family.queue_count > 0 && family.queue_flags.contains(vk::QueueFlags::COMPUTE)
                 })
             else {
                 continue;
             };
             // SAFETY: handle came from this instance.
-            let extensions = unsafe { instance.enumerate_device_extension_properties(physical_device) }
-                .map_err(|error| BackendError::Probe(format!("enumerate Vulkan extensions: {error:?}")))?;
+            let extensions =
+                unsafe { instance.enumerate_device_extension_properties(physical_device) }
+                    .map_err(|error| {
+                        BackendError::Probe(format!("enumerate Vulkan extensions: {error:?}"))
+                    })?;
             let has_external_memory_win32 = extensions.iter().any(|extension| {
                 // SAFETY: Vulkan guarantees NUL termination.
-                unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) }
+                (unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) })
                     == khr::external_memory_win32::NAME
             });
             if !has_external_memory_win32 {
@@ -877,8 +906,16 @@ mod windows {
             }
 
             let rank = (
-                if properties.vendor_id == AMD_PCI_VENDOR_ID { 0_u8 } else { 1 },
-                if properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU { 0_u8 } else { 1 },
+                if properties.vendor_id == AMD_PCI_VENDOR_ID {
+                    0_u8
+                } else {
+                    1
+                },
+                if properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU {
+                    0_u8
+                } else {
+                    1
+                },
                 properties.device_id,
             );
             candidates.push((rank, physical_device, queue_family_index as u32, name));
@@ -909,8 +946,9 @@ mod windows {
         required: vk::MemoryPropertyFlags,
     ) -> Option<u32> {
         (0..properties.memory_type_count).find(|index| {
-            let supported = memory_type_bits & (1_u32 << index) != 0;
-            let flags = properties.memory_types[*index as usize].property_flags;
+            let index_value = *index;
+            let supported = memory_type_bits & (1_u32 << index_value) != 0;
+            let flags = properties.memory_types[index_value as usize].property_flags;
             supported && flags.contains(required)
         })
     }
@@ -961,12 +999,6 @@ mod windows {
                     String::from_utf8_lossy(name).trim_end_matches('\0')
                 ))
             })
-    }
-
-    #[allow(dead_code)]
-    fn _abi_layout_guard() {
-        let _ = MaybeUninit::<HipExternalMemoryHandleDesc>::uninit();
-        let _ = Path::new("amdhip64.dll");
     }
 
     #[cfg(test)]
