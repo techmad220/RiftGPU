@@ -16,13 +16,19 @@ applications / framework adapters
       vrb-operators <------ vrb-operator-loader
             |                       |
          vrb-core          vrb-operator-plugin-api
-        /        \
-vrb-backends   vrb-plugin-api
+        /        \                    ^
+vrb-backends   vrb-plugin-api          |
+                                    dynamic
+                                  operator DLLs
+
+versioned operator protocols (GEMM, attention, ...)
+            |
+reference / HIP / Vulkan operator implementations
 ```
 
-Dynamic operator libraries depend only on the stable `vrb-operator-plugin-api` C ABI. The loader adapts those libraries into `vrb-operators::Operator` instances and injects them into an operator registry. `vrb-core` does not know that operator plugins exist.
+Dynamic operator libraries depend only on stable operator-facing contracts rather than on `vrb-core` internals. The loader adapts those libraries into `vrb-operators::Operator` instances and injects them into an operator registry. `vrb-core` does not know that operator plugins exist.
 
-Dependencies point downward. `vrb-core` must never depend on framework adapters, model integrations, operator loaders, operator plugin APIs, or concrete operator implementations.
+Dependencies point downward. `vrb-core` must never depend on framework adapters, model integrations, operator loaders, operator plugin APIs, operator protocols, or concrete operator implementations.
 
 ## Extension policy
 
@@ -32,6 +38,14 @@ New capabilities should normally be introduced as one of:
 2. a versioned dynamic plugin contract when ABI stability is required;
 3. an adapter crate for an external framework or inference engine;
 4. an operator implementation crate for GEMM, attention, quantization, transforms, or model-specific kernels.
+
+## Operator protocol boundary
+
+Operator semantics are versioned separately from the generic dynamic-plugin ABI. The plugin ABI answers **how an operator is discovered and invoked**; an operator protocol answers **what the invocation bytes mean**.
+
+For example, the GEMM protocol is an independent crate defining a portable little-endian request/response format for `C = alpha * A * B + beta * C`. A CPU reference implementation provides the correctness oracle. Future HIP/Vulkan implementations must consume the same protocol and match the reference semantics rather than inventing backend-specific request formats.
+
+Protocol decoders must validate magic, version, header size, flags, dimensions, arithmetic overflow, and exact encoded length before allocating based on message contents. Concrete implementations may impose stricter injectable resource/work limits.
 
 ## Operator plugin boundary
 
@@ -69,6 +83,7 @@ If any condition fails, build it above the core.
 - Plugin descriptors are size- and version-checked before callbacks are accepted.
 - New optional capabilities must not break older plugins.
 - Backend-plugin and operator-plugin ABIs version independently.
+- Individual operator protocols version independently from the generic operator-plugin ABI.
 
 ## Release policy
 
