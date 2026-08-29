@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  statuses: read
 
 env:
   EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -22,6 +23,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -82,6 +84,57 @@ jobs:
           $env:VRB_HIP_SHARED_GEMM_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_hip_shared_gemm_plugin.dll'
           $env:VRB_REQUIRE_HIP_SHARED_GEMM_LOAD_E2E = '1'
           cargo test --release -p vrb-hip-shared-gemm-plugin --test plugin_load_e2e -- --nocapture --test-threads=1
+      - name: Require exact-head AMD hardware proof (Windows)
+        if: runner.os == 'Windows' && github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          STATUS_TOKEN: ${{ github.token }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+
+          # Two-phase rollout: enforcement becomes active only after the marker
+          # exists on protected main, so the workflow itself can be merged first
+          # without weakening or bypassing the existing required check.
+          git fetch origin main --depth=1 | Out-Null
+          git cat-file -e 'origin/main:.github/require-amd-hardware-gate' 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host 'AMD_EXACT_HEAD_HARDWARE_ENFORCEMENT=STAGED marker_absent_on_main'
+            exit 0
+          }
+
+          $Context = 'TECH / AMD exact-head hardware'
+          $Sha = $env:EXACT_SHA
+          $Headers = @{
+            Authorization = "Bearer $env:STATUS_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $Uri = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/commits/$Sha/status"
+          $Deadline = [DateTime]::UtcNow.AddMinutes(75)
+
+          do {
+            $Combined = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers -TimeoutSec 20
+            $Hit = @($Combined.statuses | Where-Object { [string]$_.context -eq $Context } | Select-Object -First 1)
+            if ($Hit.Count -gt 0) {
+              $State = [string]$Hit[0].state
+              $Creator = [string]$Hit[0].creator.login
+              Write-Host "AMD_HARDWARE_STATUS state=$State creator=$Creator sha=$Sha"
+              if ($Creator -ne 'techmad220') {
+                throw "Hardware proof context was not published by the trusted operator identity: creator=$Creator"
+              }
+              if ($State -eq 'success') {
+                Write-Host "AMD_EXACT_HEAD_HARDWARE_PROOF=PASS sha=$Sha"
+                exit 0
+              }
+              if ($State -in @('failure','error')) {
+                throw "AMD exact-head hardware proof reported $State for $Sha"
+              }
+            }
+            Start-Sleep -Seconds 60
+          } while ([DateTime]::UtcNow -lt $Deadline)
+
+          throw "Timed out waiting for trusted AMD exact-head hardware proof for $Sha"
 
   licenses:
     name: Certification / License and dependency policy
