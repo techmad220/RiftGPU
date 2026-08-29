@@ -3,11 +3,15 @@
 #[cfg(target_os = "windows")]
 use libloading::Library;
 #[cfg(target_os = "windows")]
+use std::collections::BTreeMap;
+#[cfg(target_os = "windows")]
 use std::env;
 use std::ffi::{c_char, c_void};
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 use std::ptr;
+#[cfg(target_os = "windows")]
+use std::sync::Mutex;
 #[cfg(target_os = "windows")]
 use vrb_gemm_shared_protocol::{
     decode_control, expected_resource_lengths, A_RESOURCE_INDEX, B_RESOURCE_INDEX,
@@ -290,18 +294,78 @@ impl ImportedRegion<'_> {
 }
 
 #[cfg(target_os = "windows")]
-struct RocblasHandleGuard<'a> {
-    api: &'a RocblasApi,
-    handle: RocblasHandle,
+struct RuntimeState {
+    hip: HipApi,
+    rocblas: RocblasApi,
+    handles: BTreeMap<i32, usize>,
 }
 
 #[cfg(target_os = "windows")]
-impl Drop for RocblasHandleGuard<'_> {
-    fn drop(&mut self) {
-        if !self.handle.is_null() {
-            // SAFETY: guard uniquely owns one rocBLAS handle.
-            let _ = unsafe { (self.api.destroy_handle)(self.handle) };
+impl RuntimeState {
+    fn load() -> Result<Self, i32> {
+        Ok(Self {
+            hip: HipApi::load()?,
+            rocblas: RocblasApi::load()?,
+            handles: BTreeMap::new(),
+        })
+    }
+
+    fn handle_for_device(&mut self, device_index: i32) -> Result<RocblasHandle, i32> {
+        // SAFETY: device index is correlated by the host before invocation.
+        if unsafe { (self.hip.set_device)(device_index) } != HIP_SUCCESS {
+            return Err(status::UNAVAILABLE);
         }
+        if let Some(handle) = self.handles.get(&device_index).copied() {
+            return Ok(handle as RocblasHandle);
+        }
+
+        let mut raw_handle = ptr::null_mut();
+        // SAFETY: output points to valid local handle storage and HIP device is set.
+        if unsafe { (self.rocblas.create_handle)(&mut raw_handle) } != ROCBLAS_STATUS_SUCCESS
+            || raw_handle.is_null()
+        {
+            return Err(status::UNAVAILABLE);
+        }
+        self.handles.insert(device_index, raw_handle as usize);
+        Ok(raw_handle)
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for RuntimeState {
+    fn drop(&mut self) {
+        for (device_index, raw_handle) in std::mem::take(&mut self.handles) {
+            // Best-effort teardown: restore each handle's owning HIP device before destroy.
+            let _ = unsafe { (self.hip.set_device)(device_index) };
+            if raw_handle != 0 {
+                // SAFETY: each stored handle was created once and removed exactly once here.
+                let _ = unsafe { (self.rocblas.destroy_handle)(raw_handle as RocblasHandle) };
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+static RUNTIME_STATE: Mutex<Option<RuntimeState>> = Mutex::new(None);
+
+#[cfg(target_os = "windows")]
+fn with_runtime<T>(
+    operation: impl FnOnce(&mut RuntimeState) -> Result<T, i32>,
+) -> Result<T, i32> {
+    let mut state = RUNTIME_STATE
+        .lock()
+        .map_err(|_| status::INTERNAL_ERROR)?;
+    if state.is_none() {
+        *state = Some(RuntimeState::load()?);
+    }
+    let runtime = state.as_mut().ok_or(status::INTERNAL_ERROR)?;
+    operation(runtime)
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "C" fn shutdown(_user_data: *mut c_void) {
+    if let Ok(mut state) = RUNTIME_STATE.lock() {
+        let _ = state.take();
     }
 }
 
@@ -427,72 +491,45 @@ fn execute_windows(request: &VrbSharedOperatorExecutionRequestV1) -> i32 {
         Err(_) => return status::UNSUPPORTED,
     };
 
-    let hip = match HipApi::load() {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
-    // SAFETY: device index was encoded by the host after correlating its Vulkan/HIP inventory.
-    if unsafe { (hip.set_device)(control.hip_device_index) } != HIP_SUCCESS {
-        return status::UNAVAILABLE;
-    }
-    let rocblas = match RocblasApi::load() {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
+    let execution = with_runtime(|runtime| {
+        let raw_handle = runtime.handle_for_device(control.hip_device_index)?;
+        let a = runtime.hip.import_region(&resources[A_RESOURCE_INDEX])?;
+        let b = runtime.hip.import_region(&resources[B_RESOURCE_INDEX])?;
+        let c = runtime.hip.import_region(&resources[C_RESOURCE_INDEX])?;
 
-    let a = match hip.import_region(&resources[A_RESOURCE_INDEX]) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
-    let b = match hip.import_region(&resources[B_RESOURCE_INDEX]) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
-    let c = match hip.import_region(&resources[C_RESOURCE_INDEX]) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
-
-    let mut raw_handle = ptr::null_mut();
-    // SAFETY: output points to valid local handle storage.
-    if unsafe { (rocblas.create_handle)(&mut raw_handle) } != ROCBLAS_STATUS_SUCCESS
-        || raw_handle.is_null()
-    {
-        return status::UNAVAILABLE;
-    }
-    let handle = RocblasHandleGuard {
-        api: &rocblas,
-        handle: raw_handle,
-    };
-
-    // rocBLAS is column-major. Row-major C=A*B is equivalent to the column-major
-    // operation C^T=B^T*A^T on the same bytes, so no host-side transpose/copy occurs.
-    // SAFETY: mapped regions have exact protocol-validated FP32 byte lengths and
-    // remain live through rocBLAS execution and hipDeviceSynchronize.
-    let blas_status = unsafe {
-        (rocblas.sgemm)(
-            handle.handle,
-            ROCBLAS_OPERATION_NONE,
-            ROCBLAS_OPERATION_NONE,
-            n,
-            m,
-            k,
-            &control.alpha,
-            b.pointer().cast::<f32>(),
-            n,
-            a.pointer().cast::<f32>(),
-            k,
-            &control.beta,
-            c.pointer().cast::<f32>(),
-            n,
-        )
-    };
-    if blas_status != ROCBLAS_STATUS_SUCCESS {
-        return status::INTERNAL_ERROR;
-    }
-    // SAFETY: HIP runtime is live and all submitted rocBLAS work targets this device.
-    if unsafe { (hip.device_synchronize)() } != HIP_SUCCESS {
-        return status::INTERNAL_ERROR;
+        // rocBLAS is column-major. Row-major C=A*B is equivalent to the column-major
+        // operation C^T=B^T*A^T on the same bytes, so no host-side transpose/copy occurs.
+        // SAFETY: mapped regions have exact protocol-validated FP32 byte lengths and
+        // remain live through rocBLAS execution and hipDeviceSynchronize.
+        let blas_status = unsafe {
+            (runtime.rocblas.sgemm)(
+                raw_handle,
+                ROCBLAS_OPERATION_NONE,
+                ROCBLAS_OPERATION_NONE,
+                n,
+                m,
+                k,
+                &control.alpha,
+                b.pointer().cast::<f32>(),
+                n,
+                a.pointer().cast::<f32>(),
+                k,
+                &control.beta,
+                c.pointer().cast::<f32>(),
+                n,
+            )
+        };
+        if blas_status != ROCBLAS_STATUS_SUCCESS {
+            return Err(status::INTERNAL_ERROR);
+        }
+        // SAFETY: HIP runtime is live and all submitted rocBLAS work targets this device.
+        if unsafe { (runtime.hip.device_synchronize)() } != HIP_SUCCESS {
+            return Err(status::INTERNAL_ERROR);
+        }
+        Ok(())
+    });
+    if let Err(error) = execution {
+        return error;
     }
 
     write_receipt(request, SUCCESS_RECEIPT)
@@ -619,7 +656,7 @@ static PLUGIN: SyncPlugin = SyncPlugin(VrbSharedOperatorPluginV1 {
     user_data: ptr::null_mut(),
     query_operator: Some(query_operator),
     execute: Some(execute),
-    shutdown: None,
+    shutdown: Some(shutdown),
     reserved: [0; 5],
 });
 
