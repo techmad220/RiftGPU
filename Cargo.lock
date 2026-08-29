@@ -73,7 +73,7 @@ version = "0.38.0+1.3.281"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bb44936d800fea8f016d7f2311c6a4f97aebd5dc86f09906139ec848cf3a46f"
 dependencies = [
- "libloading",
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -157,6 +157,16 @@ name = "libloading"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
+
+[[package]]
+name = "libloading"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
 dependencies = [
  "cfg-if",
  "windows-link",
@@ -453,11 +463,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "vrb-attention-protocol"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "vrb-attention-reference"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "vrb-attention-protocol",
+]
+
+[[package]]
+name = "vrb-autotune"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "vrb-core",
+]
+
+[[package]]
 name = "vrb-backends"
 version = "0.1.0"
 dependencies = [
  "ash",
- "libloading",
+ "libloading 0.9.0",
  "thiserror",
  "tracing",
  "vrb-core",
@@ -474,14 +509,160 @@ dependencies = [
 ]
 
 [[package]]
+name = "vrb-execution-plan"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "vrb-core",
+]
+
+[[package]]
+name = "vrb-gemm-protocol"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "vrb-gemm-reference"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "vrb-core",
+ "vrb-gemm-protocol",
+ "vrb-operators",
+]
+
+[[package]]
+name = "vrb-gemm-reference-plugin"
+version = "0.1.0"
+dependencies = [
+ "vrb-core",
+ "vrb-gemm-protocol",
+ "vrb-gemm-reference",
+ "vrb-operator-loader",
+ "vrb-operator-plugin-api",
+ "vrb-operators",
+]
+
+[[package]]
+name = "vrb-gemm-shared-protocol"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "vrb-hip-shared-gemm-plugin"
+version = "0.1.0"
+dependencies = [
+ "libloading 0.9.0",
+ "vrb-backends",
+ "vrb-core",
+ "vrb-gemm-protocol",
+ "vrb-gemm-reference",
+ "vrb-gemm-shared-protocol",
+ "vrb-operators",
+ "vrb-shared-operator-loader",
+ "vrb-shared-operator-plugin-api",
+ "vrb-shared-operators",
+ "vrb-vulkan-shared-buffer",
+]
+
+[[package]]
+name = "vrb-kv-cache"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "vrb-residency",
+]
+
+[[package]]
+name = "vrb-operator-loader"
+version = "0.1.0"
+dependencies = [
+ "libloading 0.9.0",
+ "thiserror",
+ "vrb-core",
+ "vrb-operator-plugin-api",
+ "vrb-operators",
+]
+
+[[package]]
+name = "vrb-operator-plugin-api"
+version = "0.1.0"
+
+[[package]]
+name = "vrb-operators"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "vrb-core",
+]
+
+[[package]]
 name = "vrb-plugin-api"
 version = "0.1.0"
+
+[[package]]
+name = "vrb-residency"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "vrb-shared-operator-loader"
+version = "0.1.0"
+dependencies = [
+ "libloading 0.9.0",
+ "thiserror",
+ "vrb-core",
+ "vrb-operators",
+ "vrb-shared-operator-plugin-api",
+ "vrb-shared-operators",
+]
+
+[[package]]
+name = "vrb-shared-operator-plugin-api"
+version = "0.1.0"
+
+[[package]]
+name = "vrb-shared-operators"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "vrb-core",
+ "vrb-operators",
+]
+
+[[package]]
+name = "vrb-test-operator-plugin"
+version = "0.1.0"
+dependencies = [
+ "vrb-operator-plugin-api",
+]
 
 [[package]]
 name = "vrb-test-plugin"
 version = "0.1.0"
 dependencies = [
  "vrb-plugin-api",
+]
+
+[[package]]
+name = "vrb-test-shared-operator-plugin"
+version = "0.1.0"
+dependencies = [
+ "vrb-shared-operator-plugin-api",
+]
+
+[[package]]
+name = "vrb-vulkan-shared-buffer"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "vrb-core",
 ]
 
 [[package]]
