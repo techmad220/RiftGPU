@@ -1,0 +1,10 @@
+[package]
+name = "vrb-attention-reference"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+vrb-attention-protocol = { version = "0.1.0", path = "../vrb-attention-protocol" }
