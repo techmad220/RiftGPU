@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   rust:
+    name: CI / Rust
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -33,6 +34,7 @@ jobs:
         run: cargo check --workspace --all-targets --target x86_64-pc-windows-msvc
 
   licenses:
+    name: CI / License and dependency policy
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
