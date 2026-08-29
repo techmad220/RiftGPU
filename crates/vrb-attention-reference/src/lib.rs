@@ -104,7 +104,9 @@ pub fn execute_attention_f32(
                     * head_dim;
                 let mut max_score = f32::NEG_INFINITY;
 
-                for key_position in 0..=max_key {
+                for (key_position, score_slot) in
+                    scores.iter_mut().enumerate().take(max_key + 1)
+                {
                     let k_base =
                         ((batch_index * kv_heads + kv_head) * kv_len + key_position) * head_dim;
                     let mut dot = 0.0_f32;
@@ -112,7 +114,7 @@ pub fn execute_attention_f32(
                         dot += q[q_base + dim] * k[k_base + dim];
                     }
                     let score = dot * control.scale;
-                    scores[key_position] = score;
+                    *score_slot = score;
                     max_score = max_score.max(score);
                 }
 
@@ -128,8 +130,13 @@ pub fn execute_attention_f32(
                 let o_base = ((batch_index * query_heads + query_head) * query_len
                     + query_position)
                     * head_dim;
-                for key_position in 0..=max_key {
-                    let weight = scores[key_position] / denominator;
+                for (key_position, score) in scores
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .take(max_key + 1)
+                {
+                    let weight = score / denominator;
                     let v_base =
                         ((batch_index * kv_heads + kv_head) * kv_len + key_position) * head_dim;
                     for dim in 0..head_dim {
