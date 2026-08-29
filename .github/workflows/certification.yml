@@ -59,6 +59,13 @@ jobs:
           $env:VRB_TEST_SHARED_OPERATOR_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_test_shared_operator_plugin.dll'
           $env:VRB_REQUIRE_SHARED_OPERATOR_E2E = '1'
           cargo test --release -p vrb-shared-operator-loader --test plugin_e2e -- --nocapture --test-threads=1
+      - name: HIP shared GEMM plugin load E2E (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:VRB_HIP_SHARED_GEMM_PLUGIN_PATH = Join-Path $PWD 'target\release\vrb_hip_shared_gemm_plugin.dll'
+          $env:VRB_REQUIRE_HIP_SHARED_GEMM_LOAD_E2E = '1'
+          cargo test --release -p vrb-hip-shared-gemm-plugin --test plugin_load_e2e -- --nocapture --test-threads=1
 
   licenses:
     runs-on: ubuntu-latest

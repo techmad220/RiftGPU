@@ -16,6 +16,9 @@ members = [
     "crates/vrb-shared-operator-plugin-api",
     "crates/vrb-shared-operator-loader",
     "crates/vrb-test-shared-operator-plugin",
+    "crates/vrb-gemm-shared-protocol",
+    "crates/vrb-vulkan-shared-buffer",
+    "crates/vrb-hip-shared-gemm-plugin",
 ]
 resolver = "2"
 
@@ -24,7 +27,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
-repository = "https://github.com/techmad220/vulkan-rocm-bridge"
+repository = "https://github.com/techmad220/RiftGPU"
 authors = ["techmad220 contributors"]
 
 [workspace.dependencies]
