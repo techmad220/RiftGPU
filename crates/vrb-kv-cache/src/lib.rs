@@ -204,7 +204,7 @@ impl KvCache {
                 .min_by_key(|(_, entry)| entry.last_touch)
                 .map(|(key, _)| *key)
                 .ok_or(KvCacheError::CapacityExceeded {
-                    requested: self.bytes.checked_add(additional).unwrap_or(u64::MAX),
+                    requested: self.bytes.saturating_add(additional),
                     capacity: self.capacity_bytes,
                 })?;
             let removed = self
