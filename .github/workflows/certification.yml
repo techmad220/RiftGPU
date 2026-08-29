@@ -93,9 +93,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
 
-          # Two-phase rollout: enforcement becomes active only after the marker
-          # exists on protected main, so the workflow itself can be merged first
-          # without weakening or bypassing the existing required check.
+          # Enforcement is active only after the marker exists on protected main.
           git fetch origin main --depth=1 | Out-Null
           git cat-file -e 'origin/main:.github/require-amd-hardware-gate' 2>$null
           if ($LASTEXITCODE -ne 0) {
@@ -104,31 +102,49 @@ jobs:
           }
 
           $Context = 'TECH / AMD exact-head hardware'
+          $TrustedLogin = 'techmad220'
+          $TrustedUserId = [Int64]143960678
           $Sha = $env:EXACT_SHA
           $Headers = @{
             Authorization = "Bearer $env:STATUS_TOKEN"
             Accept = 'application/vnd.github+json'
             'X-GitHub-Api-Version' = '2022-11-28'
           }
-          $Uri = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/commits/$Sha/status"
+
+          # Use the per-SHA statuses endpoint, not the combined-status endpoint.
+          # The combined representation can omit creator metadata; this endpoint
+          # retains the publisher identity needed for a cryptographically scoped
+          # exact-SHA trust decision.
+          $Uri = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/statuses/$Sha?per_page=100"
           $Deadline = [DateTime]::UtcNow.AddMinutes(75)
 
           do {
-            $Combined = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers -TimeoutSec 20
-            $Hit = @($Combined.statuses | Where-Object { [string]$_.context -eq $Context } | Select-Object -First 1)
+            $Statuses = @(Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers -TimeoutSec 20)
+            $Hit = @($Statuses | Where-Object { [string]$_.context -eq $Context } | Select-Object -First 1)
             if ($Hit.Count -gt 0) {
+              if ($null -eq $Hit[0].creator -or $null -eq $Hit[0].creator.login -or $null -eq $Hit[0].creator.id) {
+                throw 'Hardware proof status is missing publisher identity metadata.'
+              }
+
               $State = [string]$Hit[0].state
-              $Creator = [string]$Hit[0].creator.login
-              Write-Host "AMD_HARDWARE_STATUS state=$State creator=$Creator sha=$Sha"
-              if ($Creator -ne 'techmad220') {
-                throw "Hardware proof context was not published by the trusted operator identity: creator=$Creator"
+              $CreatorLogin = [string]$Hit[0].creator.login
+              $CreatorId = [Int64]$Hit[0].creator.id
+              $Description = [string]$Hit[0].description
+              Write-Host "AMD_HARDWARE_STATUS state=$State creator=$CreatorLogin creator_id=$CreatorId sha=$Sha"
+
+              if ($CreatorLogin -ne $TrustedLogin -or $CreatorId -ne $TrustedUserId) {
+                throw "Hardware proof context publisher mismatch: login=$CreatorLogin id=$CreatorId"
               }
               if ($State -eq 'success') {
+                $ExpectedPrefix = "TECH AMD hardware PASS for exact PR head $($Sha.Substring(0,12))"
+                if (-not $Description.StartsWith($ExpectedPrefix, [StringComparison]::Ordinal)) {
+                  throw "Hardware proof success receipt description mismatch: $Description"
+                }
                 Write-Host "AMD_EXACT_HEAD_HARDWARE_PROOF=PASS sha=$Sha"
                 exit 0
               }
               if ($State -in @('failure','error')) {
-                throw "AMD exact-head hardware proof reported $State for $Sha"
+                throw "AMD exact-head hardware proof reported $State for $Sha`: $Description"
               }
             }
             Start-Sleep -Seconds 60
