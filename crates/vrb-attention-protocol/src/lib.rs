@@ -262,7 +262,9 @@ pub enum AttentionProtocolError {
     ZeroDimension,
     #[error("invalid attention head grouping: query_heads={query_heads}, kv_heads={kv_heads}")]
     InvalidHeadGrouping { query_heads: u32, kv_heads: u32 },
-    #[error("causal attention requires kv_len >= query_len: query_len={query_len}, kv_len={kv_len}")]
+    #[error(
+        "causal attention requires kv_len >= query_len: query_len={query_len}, kv_len={kv_len}"
+    )]
     InvalidCausalLengths { query_len: u32, kv_len: u32 },
     #[error("attention scale must be finite and positive, got {0}")]
     InvalidScale(f32),

@@ -9,9 +9,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use vrb_core::{
-    BackendId, DataType, OperationKind, PerformanceRecord, PerformanceTable,
-};
+use vrb_core::{BackendId, DataType, OperationKind, PerformanceRecord, PerformanceTable};
 
 pub const AUTOTUNE_SCHEMA_VERSION: u32 = 1;
 
@@ -140,9 +138,11 @@ impl AutotuneDatabase {
         environment.validate()?;
         shape.validate()?;
         let mut table = PerformanceTable::default();
-        for record in self.records.iter().filter(|record| {
-            &record.key.environment == environment && &record.key.shape == shape
-        }) {
+        for record in self
+            .records
+            .iter()
+            .filter(|record| &record.key.environment == environment && &record.key.shape == shape)
+        {
             record.validate()?;
             table.record(PerformanceRecord {
                 backend: record.key.backend.clone(),
@@ -159,9 +159,7 @@ impl AutotuneDatabase {
         let bytes = fs::read(path.as_ref()).map_err(AutotuneError::Io)?;
         let database: Self = serde_json::from_slice(&bytes).map_err(AutotuneError::Json)?;
         if database.schema_version != AUTOTUNE_SCHEMA_VERSION {
-            return Err(AutotuneError::UnsupportedSchema(
-                database.schema_version,
-            ));
+            return Err(AutotuneError::UnsupportedSchema(database.schema_version));
         }
         for record in &database.records {
             record.validate()?;
@@ -234,8 +232,8 @@ pub enum AutotuneError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vrb_core::{BackendId, DataType, OperationKind};
     use std::time::{SystemTime, UNIX_EPOCH};
+    use vrb_core::{BackendId, DataType, OperationKind};
 
     fn environment(runtime: &str) -> EnvironmentFingerprint {
         EnvironmentFingerprint {

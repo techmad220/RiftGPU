@@ -47,8 +47,8 @@ pub fn execute_attention_f32(
     check_input_len("k", k.len(), expected_k)?;
     check_input_len("v", v.len(), expected_v)?;
 
-    let output_elements = u64::try_from(expected_o)
-        .map_err(|_| ReferenceAttentionError::AddressSpaceOverflow)?;
+    let output_elements =
+        u64::try_from(expected_o).map_err(|_| ReferenceAttentionError::AddressSpaceOverflow)?;
     if output_elements > limits.max_tensor_elements {
         return Err(ReferenceAttentionError::ResourceLimit {
             what: "output tensor elements",
@@ -99,9 +99,9 @@ pub fn execute_attention_f32(
                     kv_len - 1
                 };
 
-                let q_base =
-                    (((batch_index * query_heads + query_head) * query_len + query_position)
-                        * head_dim);
+                let q_base = (((batch_index * query_heads + query_head) * query_len
+                    + query_position)
+                    * head_dim);
                 let mut max_score = f32::NEG_INFINITY;
 
                 for key_position in 0..=max_key {
@@ -125,9 +125,9 @@ pub fn execute_attention_f32(
                     return Err(ReferenceAttentionError::NumericalFailure);
                 }
 
-                let o_base =
-                    (((batch_index * query_heads + query_head) * query_len + query_position)
-                        * head_dim);
+                let o_base = (((batch_index * query_heads + query_head) * query_len
+                    + query_position)
+                    * head_dim);
                 for key_position in 0..=max_key {
                     let weight = scores[key_position] / denominator;
                     let v_base =

@@ -204,10 +204,7 @@ impl KvCache {
                 .min_by_key(|(_, entry)| entry.last_touch)
                 .map(|(key, _)| *key)
                 .ok_or(KvCacheError::CapacityExceeded {
-                    requested: self
-                        .bytes
-                        .checked_add(additional)
-                        .unwrap_or(u64::MAX),
+                    requested: self.bytes.checked_add(additional).unwrap_or(u64::MAX),
                     capacity: self.capacity_bytes,
                 })?;
             let removed = self
@@ -229,7 +226,9 @@ pub enum KvCacheError {
     InvalidBlock,
     #[error("KV token range overflow")]
     TokenRangeOverflow,
-    #[error("KV cache append is not contiguous: expected token {expected_start}, got {actual_start}")]
+    #[error(
+        "KV cache append is not contiguous: expected token {expected_start}, got {actual_start}"
+    )]
     NonContiguous {
         expected_start: u64,
         actual_start: u64,

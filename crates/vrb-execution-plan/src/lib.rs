@@ -9,9 +9,7 @@
 use std::collections::BTreeMap;
 
 use thiserror::Error;
-use vrb_core::{
-    BackendId, BackendKind, BackendProbe, PerformanceTable, RouteRequest,
-};
+use vrb_core::{BackendId, BackendKind, BackendProbe, PerformanceTable, RouteRequest};
 
 #[derive(Debug, Clone, Default)]
 pub struct TransitionCostTable {
@@ -200,8 +198,7 @@ impl CostAwarePlanner {
             .filter(|value| value.is_finite() && *value >= 0.0)
             .unwrap_or_else(|| {
                 self.config.unmeasured_operator_us
-                    + self.config.bootstrap_rank_penalty_us
-                        * f64::from(bootstrap_rank(probe.kind))
+                    + self.config.bootstrap_rank_penalty_us * f64::from(bootstrap_rank(probe.kind))
             })
     }
 
@@ -252,9 +249,7 @@ pub enum ExecutionPlanError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vrb_core::{
-        BackendKind, CapabilitySet, DataType, OperationKind, PerformanceRecord,
-    };
+    use vrb_core::{BackendKind, CapabilitySet, DataType, OperationKind, PerformanceRecord};
 
     fn probe(id: &str, kind: BackendKind, operations: Vec<OperationKind>) -> BackendProbe {
         BackendProbe {
@@ -342,11 +337,9 @@ mod tests {
         cpu.capabilities.external_memory = false;
         cpu.capabilities.external_semaphore = false;
         let hip = probe("hip", BackendKind::Hip, vec![OperationKind::Gemm]);
-        let planner = CostAwarePlanner::new(
-            PlannerConfig::default(),
-            TransitionCostTable::default(),
-        )
-        .unwrap();
+        let planner =
+            CostAwarePlanner::new(PlannerConfig::default(), TransitionCostTable::default())
+                .unwrap();
 
         let plan = planner
             .plan(
@@ -360,11 +353,9 @@ mod tests {
 
     #[test]
     fn empty_request_list_produces_empty_plan() {
-        let planner = CostAwarePlanner::new(
-            PlannerConfig::default(),
-            TransitionCostTable::default(),
-        )
-        .unwrap();
+        let planner =
+            CostAwarePlanner::new(PlannerConfig::default(), TransitionCostTable::default())
+                .unwrap();
         assert_eq!(
             planner
                 .plan(&[], &[], &PerformanceTable::default())

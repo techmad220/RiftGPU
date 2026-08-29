@@ -73,10 +73,7 @@ pub trait ResidentAllocation: Send + Sync {
 /// Opens a durable resource whose lifetime is explicitly owned by the returned
 /// allocation object.
 pub trait ResidencyProvider: Send + Sync {
-    fn open(
-        &self,
-        spec: &ResidencySpec,
-    ) -> Result<Arc<dyn ResidentAllocation>, ResidencyError>;
+    fn open(&self, spec: &ResidencySpec) -> Result<Arc<dyn ResidentAllocation>, ResidencyError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -202,13 +199,12 @@ impl ResidencyCache {
             });
         }
 
-        state.resident_bytes = state
-            .resident_bytes
-            .checked_add(spec.bytes)
-            .ok_or(ResidencyError::CapacityExceeded {
+        state.resident_bytes = state.resident_bytes.checked_add(spec.bytes).ok_or(
+            ResidencyError::CapacityExceeded {
                 requested: spec.bytes,
                 capacity: self.capacity_bytes,
-            })?;
+            },
+        )?;
         state.entries.insert(
             spec.key.clone(),
             CacheEntry {
@@ -257,9 +253,7 @@ impl ResidencyCache {
 pub enum ResidencyError {
     #[error("residency key cannot be empty")]
     InvalidKey,
-    #[error(
-        "invalid residency spec for '{key}': device_index={device_index}, bytes={bytes}"
-    )]
+    #[error("invalid residency spec for '{key}': device_index={device_index}, bytes={bytes}")]
     InvalidSpec {
         key: ResidencyKey,
         device_index: i32,
