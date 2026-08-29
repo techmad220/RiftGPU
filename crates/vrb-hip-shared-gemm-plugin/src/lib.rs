@@ -365,6 +365,9 @@ unsafe extern "C" fn shutdown(_user_data: *mut c_void) {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+unsafe extern "C" fn shutdown(_user_data: *mut c_void) {}
+
 const fn bit(value: u32) -> u64 {
     if value < 64 {
         1_u64 << value
