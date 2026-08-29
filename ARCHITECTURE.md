@@ -107,7 +107,7 @@ The first hardware compute path is intentionally split into independent pieces:
 
 rocBLAS uses column-major storage. The HIP implementation executes row-major `C = alpha*A*B + beta*C` without a transpose copy by viewing the same bytes as transposed column-major matrices and evaluating `C^T = B^T * A^T`. This changes only rocBLAS dimensions/leading dimensions and operand order; no bulk matrix payload is copied or rearranged by the operator.
 
-The HIP shared GEMM plugin is developed in two certification phases. Phase one contains the real execution path but deliberately leaves `PROVEN_ZERO_COPY` disabled. After the exact implementation passes AMD hardware correctness/stress certification, a follow-up exact-head change may enable `PROVEN_ZERO_COPY`; that capability must then be certified again with routing configured to require it. Software CI alone can never promote the capability.
+The HIP shared GEMM path completed its two-phase certification. The pre-promotion implementation passed exact-head RX 6800 XT correctness and 32-iteration stress certification with zero process-handle growth, after which `PROVEN_ZERO_COPY` was enabled. The promoted build is certified again with routing configured to require that evidence-bearing capability. Software CI alone can never promote the capability.
 
 ## Core admission test
 

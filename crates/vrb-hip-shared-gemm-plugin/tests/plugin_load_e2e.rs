@@ -30,6 +30,6 @@ fn dynamic_hip_shared_gemm_descriptor_loads_without_runtime_link_dependency() {
     assert!(capabilities
         .memory_kinds
         .contains(&ExternalMemoryHandleKind::Win32Kmt));
-    assert!(!capabilities.proven_zero_copy);
+    assert!(capabilities.proven_zero_copy);
     assert!(!capabilities.supports_external_synchronization);
 }

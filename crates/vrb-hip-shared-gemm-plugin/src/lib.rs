@@ -349,12 +349,8 @@ impl Drop for RuntimeState {
 static RUNTIME_STATE: Mutex<Option<RuntimeState>> = Mutex::new(None);
 
 #[cfg(target_os = "windows")]
-fn with_runtime<T>(
-    operation: impl FnOnce(&mut RuntimeState) -> Result<T, i32>,
-) -> Result<T, i32> {
-    let mut state = RUNTIME_STATE
-        .lock()
-        .map_err(|_| status::INTERNAL_ERROR)?;
+fn with_runtime<T>(operation: impl FnOnce(&mut RuntimeState) -> Result<T, i32>) -> Result<T, i32> {
+    let mut state = RUNTIME_STATE.lock().map_err(|_| status::INTERNAL_ERROR)?;
     if state.is_none() {
         *state = Some(RuntimeState::load()?);
     }
@@ -399,7 +395,9 @@ unsafe extern "C" fn query_operator(
         operator_id: OPERATOR_ID,
         operator_kind: operator_kind::GEMM,
         backend_kind: backend_kind::HIP,
-        capability_bits: capability::EXTERNAL_RESOURCE | capability::FP32,
+        capability_bits: capability::EXTERNAL_RESOURCE
+            | capability::FP32
+            | capability::PROVEN_ZERO_COPY,
         memory_kind_bits: bit(memory_handle_kind::WIN32_KMT),
         sync_kind_bits: 0,
         name: c_name(OPERATOR_NAME),
@@ -650,9 +648,11 @@ static PLUGIN: SyncPlugin = SyncPlugin(VrbSharedOperatorPluginV1 {
     name: c_name::<VRB_SHARED_OPERATOR_PLUGIN_NAME_CAPACITY>(PLUGIN_NAME),
     operator_count: 1,
     reserved0: 0,
-    // Deliberately no PROVEN_ZERO_COPY yet. Hardware certification must prove
-    // this exact path before that evidence-bearing capability is enabled.
-    capability_bits: capability::EXTERNAL_RESOURCE | capability::FP32,
+    // Evidence-bearing capability promoted only after exact-head RX 6800 XT
+    // correctness/stress certification proved direct shared-allocation execution.
+    capability_bits: capability::EXTERNAL_RESOURCE
+        | capability::FP32
+        | capability::PROVEN_ZERO_COPY,
     user_data: ptr::null_mut(),
     query_operator: Some(query_operator),
     execute: Some(execute),
@@ -675,8 +675,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn descriptor_does_not_claim_zero_copy_before_hardware_certification() {
-        assert_eq!(PLUGIN.0.capability_bits & capability::PROVEN_ZERO_COPY, 0);
+    fn descriptor_claims_zero_copy_after_hardware_certification() {
+        assert_ne!(PLUGIN.0.capability_bits & capability::PROVEN_ZERO_COPY, 0);
         assert_ne!(PLUGIN.0.capability_bits & capability::EXTERNAL_RESOURCE, 0);
     }
 

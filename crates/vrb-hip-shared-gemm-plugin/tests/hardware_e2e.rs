@@ -211,8 +211,8 @@ fn run_shared_case(
             preferred_backend: Some(BackendKind::Hip),
             required_memory_kind: Some(ExternalMemoryHandleKind::Win32Kmt),
             requires_synchronization: false,
-            // Phase one certifies the path before the evidence-bearing bit is enabled.
-            requires_proven_zero_copy: false,
+            // Final certification routes only through the physically proven path.
+            requires_proven_zero_copy: true,
         };
         let mut registry = SharedOperatorRegistry::new(Arc::new(FirstCompatibleShared));
         library.register_into(&mut registry);
@@ -268,8 +268,8 @@ fn amd_vulkan_to_hip_rocblas_shared_gemm_matches_cpu_oracle() {
         LoadedSharedOperatorLibrary::load(&path).expect("HIP shared GEMM plugin must load");
     let capabilities = library.operators()[0].capabilities();
     assert!(
-        !capabilities.proven_zero_copy,
-        "phase-one build must not pre-claim proof"
+        capabilities.proven_zero_copy,
+        "final certified build must advertise physically proven zero-copy execution"
     );
 
     let (hip_device_index, hip_device_name) = correlated_hip_device_index();
