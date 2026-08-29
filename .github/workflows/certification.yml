@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   rust:
+    name: Certification / Rust (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -70,6 +71,7 @@ jobs:
           cargo test --release -p vrb-hip-shared-gemm-plugin --test plugin_load_e2e -- --nocapture --test-threads=1
 
   licenses:
+    name: Certification / License and dependency policy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
