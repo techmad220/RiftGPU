@@ -18,9 +18,10 @@ pub const O_RESOURCE_INDEX: usize = 3;
 pub const FLAG_CAUSAL: u32 = 1;
 const KNOWN_FLAGS: u32 = FLAG_CAUSAL;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u32)]
 pub enum AttentionDataType {
+    #[default]
     F32 = 1,
     F16 = 2,
     Bf16 = 3,
@@ -45,7 +46,7 @@ impl AttentionDataType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct AttentionControl {
     pub flags: u32,
     pub data_type: AttentionDataType,
@@ -78,7 +79,7 @@ impl AttentionControl {
         {
             return Err(AttentionProtocolError::ZeroDimension);
         }
-        if self.kv_heads > self.query_heads || self.query_heads % self.kv_heads != 0 {
+        if self.kv_heads > self.query_heads || !self.query_heads.is_multiple_of(self.kv_heads) {
             return Err(AttentionProtocolError::InvalidHeadGrouping {
                 query_heads: self.query_heads,
                 kv_heads: self.kv_heads,

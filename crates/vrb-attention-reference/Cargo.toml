@@ -7,4 +7,4 @@ rust-version.workspace = true
 
 [dependencies]
 thiserror.workspace = true
-vrb-attention-protocol = { path = "../vrb-attention-protocol" }
+vrb-attention-protocol = { version = "0.1.0", path = "../vrb-attention-protocol" }

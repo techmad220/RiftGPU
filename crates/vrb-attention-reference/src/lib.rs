@@ -99,14 +99,14 @@ pub fn execute_attention_f32(
                     kv_len - 1
                 };
 
-                let q_base = (((batch_index * query_heads + query_head) * query_len
+                let q_base = ((batch_index * query_heads + query_head) * query_len
                     + query_position)
-                    * head_dim);
+                    * head_dim;
                 let mut max_score = f32::NEG_INFINITY;
 
                 for key_position in 0..=max_key {
                     let k_base =
-                        (((batch_index * kv_heads + kv_head) * kv_len + key_position) * head_dim);
+                        ((batch_index * kv_heads + kv_head) * kv_len + key_position) * head_dim;
                     let mut dot = 0.0_f32;
                     for dim in 0..head_dim {
                         dot += q[q_base + dim] * k[k_base + dim];
@@ -125,13 +125,13 @@ pub fn execute_attention_f32(
                     return Err(ReferenceAttentionError::NumericalFailure);
                 }
 
-                let o_base = (((batch_index * query_heads + query_head) * query_len
+                let o_base = ((batch_index * query_heads + query_head) * query_len
                     + query_position)
-                    * head_dim);
+                    * head_dim;
                 for key_position in 0..=max_key {
                     let weight = scores[key_position] / denominator;
                     let v_base =
-                        (((batch_index * kv_heads + kv_head) * kv_len + key_position) * head_dim);
+                        ((batch_index * kv_heads + kv_head) * kv_len + key_position) * head_dim;
                     for dim in 0..head_dim {
                         output[o_base + dim] += weight * v[v_base + dim];
                     }

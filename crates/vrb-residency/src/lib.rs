@@ -90,6 +90,7 @@ struct CacheEntry {
     last_touch: u64,
 }
 
+#[derive(Default)]
 struct CacheState {
     entries: BTreeMap<ResidencyKey, CacheEntry>,
     resident_bytes: u64,
@@ -97,19 +98,6 @@ struct CacheState {
     hits: u64,
     misses: u64,
     evictions: u64,
-}
-
-impl Default for CacheState {
-    fn default() -> Self {
-        Self {
-            entries: BTreeMap::new(),
-            resident_bytes: 0,
-            clock: 0,
-            hits: 0,
-            misses: 0,
-            evictions: 0,
-        }
-    }
 }
 
 pub struct ResidencyCache {
