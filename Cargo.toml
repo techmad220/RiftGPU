@@ -19,6 +19,12 @@ members = [
     "crates/vrb-gemm-shared-protocol",
     "crates/vrb-vulkan-shared-buffer",
     "crates/vrb-hip-shared-gemm-plugin",
+    "crates/vrb-residency",
+    "crates/vrb-attention-protocol",
+    "crates/vrb-attention-reference",
+    "crates/vrb-kv-cache",
+    "crates/vrb-execution-plan",
+    "crates/vrb-autotune",
 ]
 resolver = "2"
 
