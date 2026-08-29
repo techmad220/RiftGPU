@@ -114,7 +114,8 @@ jobs:
           $Deadline = [DateTime]::UtcNow.AddMinutes(75)
 
           do {
-            $Statuses = @(Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers -TimeoutSec 20)
+            $RawStatuses = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers -TimeoutSec 20
+            $Statuses = @($RawStatuses | Write-Output)
             $Hit = @($Statuses | Where-Object { [string]$_.context -eq $Context } | Select-Object -First 1)
             if ($Hit.Count -gt 0) {
               if ($null -eq $Hit[0].creator -or $null -eq $Hit[0].creator.login -or $null -eq $Hit[0].creator.id) {
